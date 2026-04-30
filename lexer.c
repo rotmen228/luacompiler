@@ -62,6 +62,12 @@ static const TokenDict operator_dict[] = {
     {"=",  TOKEN_OP_ASSIGN},
     {"(",  TOKEN_PUNC_LPAREN},
     {")",  TOKEN_PUNC_RPAREN},
+    {"{",  TOKEN_PUNC_LBRACE},   // <-- הוספנו
+    {"}",  TOKEN_PUNC_RBRACE},   // <-- הוספנו
+    {"[",  TOKEN_PUNC_LBRACKET}, // <-- הוספנו
+    {"]",  TOKEN_PUNC_RBRACKET}, // <-- הוספנו
+    {";",  TOKEN_PUNC_SEMI},     // <-- הוספנו ליתר ביטחון
+    {":",  TOKEN_PUNC_COLON},     // <-- הוספנו ליתר ביטחון
     {",",  TOKEN_PUNC_COMMA}
 };
 
@@ -163,6 +169,8 @@ TokenList runLexer(const char* sourceCode) {
                         ptr++;
                     } else {
                         state = STATE_ERROR; // תו לא חוקי
+                        buffer[bufIdx++] = c;
+                        ptr++;
                     }
                     break;
                     

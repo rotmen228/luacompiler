@@ -36,6 +36,6 @@ typedef struct {
 
 TokenList runLexer(const char* sourceCode);
 void freeTokenList(TokenList* list);
-void printTokens(const TokenList* list);
+//void printTokens(const TokenList* list);
 
 #endif

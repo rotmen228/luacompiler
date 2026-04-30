@@ -1,4 +1,5 @@
 
+local rot = nil
 function make_multiplier(factor)
 
     return function(x)
