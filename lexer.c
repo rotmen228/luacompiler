@@ -57,6 +57,7 @@ static const TokenDict operator_dict[] = {
     {"-",  TOKEN_OP_MINUS},
     {"*",  TOKEN_OP_MUL},
     {"/",  TOKEN_OP_DIV},
+    {"%",  TOKEN_OP_MOD},
     {"<",  TOKEN_OP_LT},
     {">",  TOKEN_OP_GT},
     {"=",  TOKEN_OP_ASSIGN},
@@ -163,7 +164,7 @@ TokenList runLexer(const char* sourceCode) {
                     } else if (c == '"' || c == '\'') {
                         state = STATE_STRING;
                         ptr++; // מדלגים על המרכאות
-                    } else if (strchr("+-*/=~<>.(),:", c)) {
+                    } else if (strchr("+-*/=~<>.(),:%", c)) {
                         state = STATE_OPERATOR;
                         buffer[bufIdx++] = c;
                         ptr++;

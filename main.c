@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "lexerH.h"
+#include "ast.h" // הוספנו את הספריה של העץ
 
 const char* tokenNames[] = {
     "TOKEN_KW_IF", "TOKEN_KW_THEN", "TOKEN_KW_ELSEIF", "TOKEN_KW_ELSE", "TOKEN_KW_END",
@@ -21,6 +22,7 @@ const char* tokenNames[] = {
     "TOKEN_IDENTIFIER", "TOKEN_NUMBER", "TOKEN_STRING",
     "TOKEN_EOF", "TOKEN_ERROR"
 };
+
 // פונקציית עזר לקריאת תוכן של קובץ לתוך מחרוזת (Buffer)
 char* readFile(const char* filename) {
     FILE* file = fopen(filename, "rb");
@@ -59,7 +61,6 @@ void printTokens(const char* testName, const TokenList* list) {
     printf("-------------------------------------------------\n");
     
     for (int i = 0; i < list->count; i++) {
-        // שימוש במערך tokenNames לפי ה-type כדי להדפיס מחרוזת במקום מספר
         printf("%-10d | %-20s | '%s'\n", 
                list->tokens[i].line, 
                tokenNames[list->tokens[i].type], 
@@ -67,28 +68,44 @@ void printTokens(const char* testName, const TokenList* list) {
     }
     printf("=================================================\n\n");
 }
+
 int main() {
     // מערך של שמות הקבצים לבדיקה
     const char* files[] = {"test_simple.lua", "test_mid.lua", "test_hard.lua"};
     int numFiles = sizeof(files) / sizeof(files[0]);
 
     for (int i = 0; i < numFiles; i++) {
+        printf("\n*************************************************\n");
         printf("Starting analysis for: %s...\n", files[i]);
+        printf("*************************************************\n");
         
         char* source = readFile(files[i]);
         if (source) {
-            // הרצת הלקסר (הפרוצדורה המרכזית מהספר שלך)
+            // 1. הרצת הלקסר
             TokenList list = runLexer(source);
             
-            // הדפסת תוצאות
+            // הדפסת תוצאות הלקסר
             printTokens(files[i], &list);
             
-            // שחרור זיכרון
+            // 2. הרצת הפארסר
+            printf("Building Abstract Syntax Tree (AST) for %s...\n", files[i]);
+            printf("-------------------------------------------------\n");
+            ASTNode* root = runParser(&list);
+            
+            // 3. הדפסת העץ
+            if (root) {
+                printAST(root, 0);
+            } else {
+                printf("Failed to build AST.\n");
+            }
+            
+            // שחרור זיכרון - קודם העץ ואז האסימונים
+            freeAST(root);
             freeTokenList(&list);
             free(source);
         }
     }
 
-    printf("All tests completed.\n");
+    printf("\nAll tests completed.\n");
     return 0;
 }
