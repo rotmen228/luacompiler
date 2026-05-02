@@ -94,16 +94,18 @@ int main() {
             ASTNode* root = runParser(&list);
             
             // 3. הדפסת העץ
+            // 3. הדפסת העץ
             if (root) {
-                // printAST(root, 0); // הערתי את זה כדי שהפלט לא יהיה עמוס מדי, תוכל להחזיר
+                printf("\n--- Abstract Syntax Tree (AST) ---\n");
+                printAST(root, 0); // <-- הסרנו את ההערה, עכשיו העץ יודפס!
                 
                 // 4. הרצת הניתוח הסמנטי (Semantic Analysis)
                 SymbolTable* globalScope = analyzeSemantic(root);
                 
-                // 5. שלב יצירת הקוד (בעתיד הקרוב נחבר לכאן את codegen.c)
-                // if (globalScope != NULL) {
-                //     generateCode(root, globalScope, "output.c");
-                // }
+                // 5. הדפסת טבלת הסמלים הגלובלית בסיום
+                if (globalScope != NULL) {
+                    printSymbolTable(globalScope, "Global Scope");
+                }
                 
             } else {
                 printf("Failed to build AST.\n");

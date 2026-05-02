@@ -16,6 +16,66 @@ static void analyzeSemanticCall(ASTNode* node, SymbolTable* table);
 static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table);
 static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolType right, int line);
 
+// ==========================================
+// פונקציות דיבאג והדפסה לטבלת הסמלים
+// ==========================================
+
+static const char* getSymbolTypeName(SymbolType type) {
+    switch(type) {
+        case TYPE_INT: return "int";
+        case TYPE_DOUBLE: return "double";
+        case TYPE_STRING: return "string";
+        case TYPE_BOOL: return "bool";
+        case TYPE_FUNCTION: return "function";
+        case TYPE_VOID: return "void";
+        case TYPE_UNKNOWN: return "UNKNOWN";
+        default: return "???";
+    }
+}
+
+static const char* getScopeTypeName(ScopeType scope) {
+    switch(scope) {
+        case SCOPE_GLOBAL: return "GLOBAL";
+        case SCOPE_GLOBAL_IMPLICIT: return "GLOBAL_IMPLICIT";
+        case SCOPE_FILE_LOCAL: return "FILE_LOCAL";
+        case SCOPE_BLOCK_LOCAL: return "BLOCK_LOCAL";
+        default: return "???";
+    }
+}
+
+void printSymbolTable(SymbolTable* table, const char* scopeName) {
+    if (!table) return;
+    
+    printf("\n=== Symbol Table: %s ===\n", scopeName);
+    printf("%-15s | %-10s | %-15s | %s\n", "Name", "Type", "Scope", "Initialized?");
+    printf("----------------------------------------------------------\n");
+    
+    bool isEmpty = true;
+    for (int i = 0; i < HASH_TABLE_SIZE; i++) {
+        HashEntry* entry = table->buckets[i];
+        while (entry != NULL) {
+            isEmpty = false;
+            SymbolRecord* rec = entry->record;
+            
+            // בדיקה אם מאותחל (לפונקציות נציג N/A כי הן מוגדרות מעצם קיומן)
+            const char* initStr = (rec->type == TYPE_FUNCTION) ? "N/A" : 
+                                  (rec->data.var_data.is_initialized ? "Yes" : "No");
+                                  
+            printf("%-15s | %-10s | %-15s | %s\n", 
+                   rec->name, 
+                   getSymbolTypeName(rec->type), 
+                   getScopeTypeName(rec->scope),
+                   initStr);
+                   
+            entry = entry->next;
+        }
+    }
+    
+    if (isEmpty) {
+        printf("(Empty Table)\n");
+    }
+    printf("==========================================================\n\n");
+}
 
 static unsigned int hash(const char* str) {
     unsigned int hash = 5381;
@@ -443,6 +503,7 @@ static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
         }
         free(paramTypes);
     }
+    printSymbolTable(funcScope, funcName);
 }
  
 // -------------------------------------------
