@@ -7,7 +7,8 @@
 typedef enum {
     AST_PROGRAM,        // שורש העץ (כל התוכנית)
     AST_BLOCK,          // בלוק של קוד (למשל בתוך if או while)
-    AST_ASSIGNMENT,     // השמת משתנה (x = 5)
+    AST_ASSIGNMENT,
+    AST_LOCAL_ASSIGN,
     AST_IF,             // תנאי
     AST_WHILE,
     AST_REPEAT,

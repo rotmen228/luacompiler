@@ -144,26 +144,37 @@ ASTNode* parseStatement(Parser* p) {
     }
 }
 ASTNode* parseLocal(Parser* p) {
-    consume(p);
+    consume(p); // בולע את המילה 'local'
+    
     Token id = consume(p); // קריאת שם המשתנה (Identifier)
     if (id.type != TOKEN_IDENTIFIER) {
         parseError(p, "Expected variable name after 'local'");
     }
 
-    // יצירת צומת השמה בעץ
-    ASTNode* node = createNode(AST_ASSIGNMENT, id);
+    // ---> התיקון הקריטי: יוצרים צומת מסוג זיהוי משתנה (Identifier)
+    ASTNode* idNode = createNode(AST_IDENTIFIER, id);
 
     // בדיקה האם יש סימן שווה (אופציונלי בלואה - משתנה יכול להיות nil)
     if (match(p, TOKEN_OP_ASSIGN)) {
-        // קריאה לניתוח הביטוי שנמצא בצד ימין (למשל המספר 5)
-        addChild(node, parseExpression(p));
+        ASTNode* valueNode = parseExpression(p);
+        
+        // יצירת צומת השמה מקומית
+        ASTNode* assignNode = createNode(AST_LOCAL_ASSIGN, (Token){TOKEN_OP_ASSIGN, "=", p->list->tokens[p->current - 1].line});
+        
+        addChild(assignNode, idNode);
+        addChild(assignNode, valueNode);
+        return assignNode;
     } else {
-        // אם אין '=', המשתנה מקבל ערך nil כברירת מחדל
-        Token nilToken = {TOKEN_KW_NIL, "nil", id.line};
-        addChild(node, createNode(AST_NIL, nilToken));
+        // אתחול ל-nil במידה ואין '='
+        ASTNode* nilNode = createNode(AST_NIL, (Token){TOKEN_KW_NIL, "nil", p->list->tokens[p->current - 1].line});
+        
+        // יצירת צומת השמה מקומית
+        ASTNode* assignNode = createNode(AST_LOCAL_ASSIGN, (Token){TOKEN_OP_ASSIGN, "=", p->list->tokens[p->current - 1].line});
+        
+        addChild(assignNode, idNode);
+        addChild(assignNode, nilNode);
+        return assignNode;
     }
-
-    return node;
 }
 // --- מימוש RETURN ---
 ASTNode* parseReturn(Parser* p) {
@@ -549,11 +560,12 @@ ASTNode* parseExpression(Parser* p) {
 // ==========================================
 
 // פונקציית עזר להמרת סוג הצומת למחרוזת קריאה
-static const char* getASTNodeName(ASTNodeType type) {
+const char* getNodeTypeName(ASTNodeType type) {
     switch(type) {
         case AST_PROGRAM: return "AST_PROGRAM";
         case AST_BLOCK: return "AST_BLOCK";
         case AST_ASSIGNMENT: return "AST_ASSIGNMENT";
+        case AST_LOCAL_ASSIGN: return "AST_LOCAL_ASSIGN"; // <--- הוסף את השורה הזו
         case AST_IF: return "AST_IF";
         case AST_WHILE: return "AST_WHILE";
         case AST_FOR: return "AST_FOR";
@@ -581,7 +593,7 @@ void printAST(ASTNode* node, int depth) {
     }
     
     // הדפסת סוג הצומת
-    printf("%s", getASTNodeName(node->type));
+    printf("%s", getNodeTypeName(node->type));
     
     // אם יש לטוקן ערך (כמו שם משתנה, מספר או אופרטור), נדפיס גם אותו
     if (node->token.value) {

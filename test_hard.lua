@@ -1,4 +1,5 @@
 local rot = nil
+local man = "hello" .. " world"
 function is_prime_helper(n, divisor)
     if n <= 1 then
         return 0
