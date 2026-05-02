@@ -213,6 +213,10 @@ SymbolType inferType(ASTNode* node, SymbolTable* table) {
  
         // קריאת פונקציה — מחזיר את טיפוס ההחזרה
         case AST_FUNCTION_CALL: {
+            // ---> התיקון: לפני שמסיקים את טיפוס ההחזרה, בצע אנליזה מלאה לקריאה! <---
+            // זה יבדוק שהארגומנטים תקינים ויעדכן את טיפוסי הפרמטרים (כמו n)
+            analyzeSemanticCall(node, table);
+            
             SymbolRecord* record = lookupSymbol(table, node->token.value);
             if (record && record->type == TYPE_FUNCTION) {
                 return record->data.func_data.return_type;
@@ -449,14 +453,14 @@ static void analyzeSemanticFor(ASTNode* node, SymbolTable* table) {
 // analyzeSemanticFunction — הגדרת פונקציה
 // -------------------------------------------
 static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
-    // children[0] = שם הפונקציה
-    // children[1] = רשימת פרמטרים (BLOCK עם IDENTIFIER ילדים)
-    // children[2] = גוף הפונקציה
-    const char* funcName = node->children[0]->token.value;
-    ASTNode* paramsNode  = node->children[1];
-    ASTNode* bodyNode    = node->children[2];
- 
-    int paramCount = paramsNode ? paramsNode->childCount : 0;
+    // לפי הפארסר שלנו: שם הפונקציה נמצא בטוקן של הצומת עצמו!
+    const char* funcName = node->token.value;
+    
+    // הילד האחרון הוא תמיד הגוף (הבלוק) של הפונקציה
+    ASTNode* bodyNode = node->children[node->childCount - 1];
+    
+    // כל שאר הילדים (אם יש כאלו) הם הפרמטרים
+    int paramCount = node->childCount - 1;
  
     // בנה מערך טיפוסי פרמטרים — כולם UNKNOWN בשלב זה
     SymbolType* paramTypes = NULL;
@@ -475,34 +479,33 @@ static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
     SymbolTable* funcScope = createSymbolTable(table);
  
     // שלב 3: הכנס את כל הפרמטרים כ-BLOCK_LOCAL בטבלת הפונקציה
-    if (paramsNode != NULL) {
-        for (int i = 0; i < paramsNode->childCount; i++) {
-            const char* paramName = paramsNode->children[i]->token.value;
-            SymbolRecord* paramRecord = createVarRecord(
-                paramName, TYPE_UNKNOWN, SCOPE_BLOCK_LOCAL, true);
-            insertSymbol(funcScope, paramRecord);
-        }
+    for (int i = 0; i < paramCount; i++) {
+        const char* paramName = node->children[i]->token.value; // הפרמטרים הם הילדים הראשונים
+        SymbolRecord* paramRecord = createVarRecord(paramName, TYPE_UNKNOWN, SCOPE_BLOCK_LOCAL, true);
+        insertSymbol(funcScope, paramRecord);
     }
  
     // שלב 4: נתח את גוף הפונקציה
     SymbolRecord* prevFunc = currentFunctionScope;
     currentFunctionScope = funcRecord;
     
+    // שליחת תוכן הבלוק לאנליזה
     analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, funcScope);
     
     currentFunctionScope = prevFunc;
  
-    // שלב 5: עדכן את טיפוסי הפרמטרים ברשומת הפונקציה לפי מה שנלמד
+    // שלב 5: עדכן את טיפוסי הפרמטרים ברשומת הפונקציה לפי מה שנלמד בתוך הבלוק
     if (paramCount > 0 && paramTypes != NULL) {
         for (int i = 0; i < paramCount; i++) {
-            const char* paramName = paramsNode->children[i]->token.value;
+            const char* paramName = node->children[i]->token.value;
             SymbolRecord* paramRecord = lookupSymbol(funcScope, paramName);
             if (paramRecord) {
+                // המערך paramTypes כבר יושב בתוך funcRecord
                 funcRecord->data.func_data.params.param_types[i] = paramRecord->type;
             }
         }
-        free(paramTypes);
     }
+    
     printSymbolTable(funcScope, funcName);
 }
  
@@ -534,6 +537,9 @@ static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
 // -------------------------------------------
 // analyzeSemanticCall — קריאת פונקציה
 // -------------------------------------------
+// -------------------------------------------
+// analyzeSemanticCall — קריאת פונקציה
+// -------------------------------------------
 static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
     const char* funcName = node->token.value;
  
@@ -560,14 +566,15 @@ static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
         return;
     }
  
-    // שלב 3: עבור כל ארגומנט — הסק טיפוס ובדוק תאימות עם הפרמטר המצופה
+    // שלב 3: עבור כל ארגומנט — הסק טיפוס ובדוק תאימות
     for (int i = 0; i < givenArgs; i++) {
         SymbolType argType = inferType(node->children[i], table);
         SymbolType expectedType = funcRecord->data.func_data.params.param_types[i];
  
         if (expectedType == TYPE_UNKNOWN) {
-            // הסקת טיפוס מזמן קריאה — עדכן את הפרמטר
+            // ---> השינוי הקריטי: עדכון הטיפוס הלא-ידוע לטיפוס שגילינו עכשיו!
             funcRecord->data.func_data.params.param_types[i] = argType;
+            
         } else if (argType != expectedType && argType != TYPE_UNKNOWN) {
             printf("Semantic Error at line %d: Argument %d to function '%s' has wrong type\n",
                    node->token.line, i + 1, funcName);
@@ -609,6 +616,7 @@ static void analyzeSemanticBlock(ASTNode** nodes, int count, SymbolTable* table)
                 break;
  
             case AST_FUNCTION_CALL:
+
                 analyzeSemanticCall(node, table);
                 break;
  
