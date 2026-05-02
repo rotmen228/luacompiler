@@ -68,6 +68,6 @@ SymbolRecord* createVarRecord(const char* name, SymbolType type, ScopeType scope
 
 // --- חתימות לפונקציות האנליזה המרכזיות (נכתוב בהמשך) ---
 SymbolType inferType(ASTNode* node, SymbolTable* table);
-void analyzeSemantic(ASTNode* root);
+SymbolTable* analyzeSemantic(ASTNode* root);
 
 #endif // SEMANTIC_H

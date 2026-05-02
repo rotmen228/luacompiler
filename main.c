@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "lexerH.h"
-#include "ast.h" // הוספנו את הספריה של העץ
+#include "ast.h"      // הספריה של העץ
+#include "semantic.h" // הוספנו את הספריה הסמנטית!
 
 const char* tokenNames[] = {
     "TOKEN_KW_IF", "TOKEN_KW_THEN", "TOKEN_KW_ELSEIF", "TOKEN_KW_ELSE", "TOKEN_KW_END",
@@ -84,8 +85,8 @@ int main() {
             // 1. הרצת הלקסר
             TokenList list = runLexer(source);
             
-            // הדפסת תוצאות הלקסר
-            printTokens(files[i], &list);
+            // הדפסת תוצאות הלקסר (אופציונלי, אפשר למחוק/להעיר אם זה מדפיס יותר מדי)
+            // printTokens(files[i], &list);
             
             // 2. הרצת הפארסר
             printf("Building Abstract Syntax Tree (AST) for %s...\n", files[i]);
@@ -94,7 +95,16 @@ int main() {
             
             // 3. הדפסת העץ
             if (root) {
-                printAST(root, 0);
+                // printAST(root, 0); // הערתי את זה כדי שהפלט לא יהיה עמוס מדי, תוכל להחזיר
+                
+                // 4. הרצת הניתוח הסמנטי (Semantic Analysis)
+                SymbolTable* globalScope = analyzeSemantic(root);
+                
+                // 5. שלב יצירת הקוד (בעתיד הקרוב נחבר לכאן את codegen.c)
+                // if (globalScope != NULL) {
+                //     generateCode(root, globalScope, "output.c");
+                // }
+                
             } else {
                 printf("Failed to build AST.\n");
             }

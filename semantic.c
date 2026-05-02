@@ -3,8 +3,20 @@
 #include <string.h>
 #include "semantic.h"
 
+static SymbolRecord* currentFunctionScope = NULL;
 
-// פונקציית גיבוב (Hash) קלאסית ויעילה למחרוזות (djb2)
+static void analyzeSemanticBlock(ASTNode** nodes, int count, SymbolTable* table);
+static void analyzeSemanticAssign(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticLocal(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticIf(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticLoop(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticFor(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticCall(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table);
+static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolType right, int line);
+
+
 static unsigned int hash(const char* str) {
     unsigned int hash = 5381;
     int c;
@@ -35,6 +47,17 @@ SymbolRecord* createVarRecord(const char* name, SymbolType type, ScopeType scope
     record->type = type;
     record->scope = scope;
     record->data.var_data.is_initialized = is_init;
+    return record;
+}
+// פונקציית עזר ליצירת רשומת פונקציה בזיכרון
+SymbolRecord* createFuncRecord(const char* name, SymbolType returnType, SymbolType* paramTypes, int paramCount) {
+    SymbolRecord* record = (SymbolRecord*)malloc(sizeof(SymbolRecord));
+    record->name = strdup(name);
+    record->type = TYPE_FUNCTION;
+    record->scope = SCOPE_GLOBAL; // פונקציות בלואה הן לרוב גלובליות
+    record->data.func_data.return_type = returnType;
+    record->data.func_data.params.param_types = paramTypes;
+    record->data.func_data.params.param_count = paramCount;
     return record;
 }
 
@@ -74,87 +97,61 @@ SymbolRecord* lookupSymbol(SymbolTable* table, const char* name) {
     return NULL; // המשתנה לא הוגדר באף טווח הכרה שזמין לנו
 }
 
-
-
-// ==========================================
-// חלק 3: מערכת הסקת טיפוסים (Type Inference)
-// ==========================================
+static SymbolTable* getGlobalTable(SymbolTable* table) {
+    SymbolTable* current = table;
+    while (current->parent_table != NULL) {
+        current = current->parent_table;
+    }
+    return current;
+}
+ 
+// עזר: בדיקה האם הטבלה הנוכחית היא הגלובלית
+static bool isGlobalTable(SymbolTable* table) {
+    return table->parent_table == NULL;
+}
 SymbolType inferType(ASTNode* node, SymbolTable* table) {
     if (!node) return TYPE_UNKNOWN;
-
+ 
     switch (node->type) {
+ 
+        // מספר שלם
         case AST_NUMBER:
             if (strchr(node->token.value, '.')) return TYPE_DOUBLE;
             return TYPE_INT;
-
+ 
+        // מחרוזת
         case AST_STRING:
             return TYPE_STRING;
-
+ 
+        // nil → UNKNOWN (טיפוס עדיין לא ידוע)
         case AST_NIL:
-            return TYPE_VOID;
-
+            return TYPE_UNKNOWN;
+ 
+        // מזהה: true/false או שם משתנה
         case AST_IDENTIFIER: {
-            // --- תיקון 1: טיפול בערכים בוליאניים ישירים ---
-            if (strcmp(node->token.value, "true") == 0 || strcmp(node->token.value, "false") == 0) {
+            if (strcmp(node->token.value, "true") == 0 ||
+                strcmp(node->token.value, "false") == 0) {
                 return TYPE_BOOL;
             }
-
-            // אם זה משתנה קיים, נשלוף את הטיפוס מהטבלה
+            // חיפוש בטבלת הסמלים וטבלאות האב
             SymbolRecord* record = lookupSymbol(table, node->token.value);
             if (record) {
                 return record->type;
             }
-            return TYPE_UNKNOWN; // המשתנה עדיין לא הוגדר
+            // משתנה לא הוגדר
+            printf("Semantic Error at line %d: Use of undeclared variable '%s'\n",
+                   node->token.line, node->token.value);
+            return TYPE_UNKNOWN;
         }
-
+ 
+        // ביטוי בינארי — הסקה bottom-up: שמאל ← ימין ← שורש
         case AST_BINOP: {
-            SymbolType leftType = inferType(node->children[0], table);
+            SymbolType leftType  = inferType(node->children[0], table);
             SymbolType rightType = inferType(node->children[1], table);
-            TokenType op = node->token.type;
-
-            // 1. אופרטורים לוגיים ויחסיים
-            if (op == TOKEN_OP_EQ || op == TOKEN_OP_NEQ ||
-                op == TOKEN_OP_LT || op == TOKEN_OP_GT ||
-                op == TOKEN_OP_LTE || op == TOKEN_OP_GTE ||
-                op == TOKEN_KW_AND || op == TOKEN_KW_OR) {
-                
-                // בדיקת תאימות: האם מנסים להשוות מחרוזת למספר? (אופציונלי אך מומלץ)
-                if (leftType != rightType && leftType != TYPE_UNKNOWN && rightType != TYPE_UNKNOWN) {
-                    // C תדע להתמודד עם השוואת Int ו-Double, אבל לא Int ו-String
-                    if ((leftType == TYPE_STRING) != (rightType == TYPE_STRING)) {
-                        printf("Semantic Error at line %d: Cannot compare string with non-string\n", node->token.line);
-                    }
-                }
-                return TYPE_BOOL;
-            }
-
-            // 2. שרשור מחרוזות (..)
-            if (op == TOKEN_OP_CONCAT) {
-                // חייבים לוודא ששני הצדדים תואמים לפעולת שרשור
-                if (leftType != TYPE_STRING || rightType != TYPE_STRING) {
-                    printf("Semantic Error at line %d: Invalid operand types for concatenation (..). Both must be strings.\n", node->token.line);
-                    return TYPE_UNKNOWN;
-                }
-                return TYPE_STRING;
-            }
-
-            // --- תיקון 2: בדיקת תאימות מחמירה לאופרטורים מתמטיים ---
-            // חוקיות: מתמטיקה עושים רק על מספרים (Int או Double)
-            if ((leftType != TYPE_INT && leftType != TYPE_DOUBLE && leftType != TYPE_UNKNOWN) || 
-                (rightType != TYPE_INT && rightType != TYPE_DOUBLE && rightType != TYPE_UNKNOWN)) {
-                
-                printf("Semantic Error at line %d: Invalid operand types for math operation '%s'. Cannot use strings or booleans.\n", 
-                       node->token.line, node->token.value);
-                return TYPE_UNKNOWN; // עוצרים את הסקת הטיפוס כדי למנוע קריסה
-            }
-
-            // Type Promotion: אם עברנו את הבדיקה, ואחד מהם עשרוני - התוצאה עשרונית
-            if (leftType == TYPE_DOUBLE || rightType == TYPE_DOUBLE) {
-                return TYPE_DOUBLE;
-            }
-            return TYPE_INT; // ברירת המחדל למתמטיקה רגילה
+            return checkTypeCompatibility(leftType, node->token.type, rightType, node->token.line);
         }
-
+ 
+        // קריאת פונקציה — מחזיר את טיפוס ההחזרה
         case AST_FUNCTION_CALL: {
             SymbolRecord* record = lookupSymbol(table, node->token.value);
             if (record && record->type == TYPE_FUNCTION) {
@@ -162,197 +159,426 @@ SymbolType inferType(ASTNode* node, SymbolTable* table) {
             }
             return TYPE_UNKNOWN;
         }
-
+ 
         default:
             return TYPE_UNKNOWN;
     }
 }
-
 // ==========================================
-// חלק 4: הניתוח הסמנטי (AST Traversal)
+// חלק 3: בדיקת תאימות טיפוסים
 // ==========================================
-void analyzeSemanticFunction(ASTNode* funcNode, SymbolTable* currentTable) {
-    // 1. צור רשומה בטבלת_סמלים_נוכחית עבור הפונקציה עם טיפוס UNKNOWN לפרמטרים וההחזרה
-    SymbolRecord* funcRecord = createVarRecord(funcNode->token.value, TYPE_FUNCTION, SCOPE_GLOBAL, true);
-    funcRecord->data.func_data.return_type = TYPE_UNKNOWN;
-    
-    // מספר הילדים פחות 1 (הילד האחרון הוא גוף הפונקציה) נותן לנו את כמות הפרמטרים
-    int paramCount = funcNode->childCount - 1;
-    funcRecord->data.func_data.params.param_count = paramCount;
-    
-    // הקצאת מערך דינמי לשמירת טיפוסי הפרמטרים
-    if (paramCount > 0) {
-        funcRecord->data.func_data.params.param_types = (SymbolType*)malloc(paramCount * sizeof(SymbolType));
-        for(int i = 0; i < paramCount; i++) {
-            funcRecord->data.func_data.params.param_types[i] = TYPE_UNKNOWN;
+ 
+static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolType right, int line) {
+ 
+    // --- אופרטורי יחס והשוואה → תוצאה תמיד bool ---
+    if (op == TOKEN_OP_EQ  || op == TOKEN_OP_NEQ ||
+        op == TOKEN_OP_LT  || op == TOKEN_OP_GT  ||
+        op == TOKEN_OP_LTE || op == TOKEN_OP_GTE) {
+ 
+        // לא ניתן להשוות מחרוזת עם לא-מחרוזת
+        if (left != TYPE_UNKNOWN && right != TYPE_UNKNOWN) {
+            if ((left == TYPE_STRING) != (right == TYPE_STRING)) {
+                printf("Semantic Error at line %d: Cannot compare string with non-string\n", line);
+            }
         }
+        return TYPE_BOOL;
+    }
+ 
+    // --- אופרטורים לוגיים (and, or) → תוצאה תמיד bool ---
+    if (op == TOKEN_KW_AND || op == TOKEN_KW_OR) {
+        return TYPE_BOOL;
+    }
+ 
+    // --- שרשור מחרוזות (..) → שני הצדדים חייבים להיות char* ---
+    if (op == TOKEN_OP_CONCAT) {
+        if (left != TYPE_STRING || right != TYPE_STRING) {
+            printf("Semantic Error at line %d: Concatenation (..) requires both operands to be strings\n", line);
+            return TYPE_UNKNOWN;
+        }
+        return TYPE_STRING;
+    }
+ 
+    // --- פעולות מתמטיות (+, -, *, /) ---
+    // חוקיות: מתמטיקה רק על מספרים (int, double, או UNKNOWN שטרם נקבע)
+    bool leftValid  = (left  == TYPE_INT || left  == TYPE_DOUBLE || left  == TYPE_UNKNOWN);
+    bool rightValid = (right == TYPE_INT || right == TYPE_DOUBLE || right == TYPE_UNKNOWN);
+ 
+    if (!leftValid || !rightValid) {
+        printf("Semantic Error at line %d: Cannot perform math operation on non-numeric types\n", line);
+        return TYPE_UNKNOWN;
+    }
+ 
+    // קידום טיפוס: אם אחד מהם double, התוצאה double
+    if (left == TYPE_DOUBLE || right == TYPE_DOUBLE) {
+        return TYPE_DOUBLE;
+    }
+    return TYPE_INT;
+}
+static void analyzeSemanticAssign(ASTNode* node, SymbolTable* table) {
+    // הילד הימני הוא הערך, הילד השמאלי הוא שם המשתנה
+    ASTNode* varNode = node->children[0];
+    ASTNode* valNode = node->children[1];
+    const char* varName = varNode->token.value;
+ 
+    // שלב 1: הסק את הטיפוס מצד ימין
+    SymbolType inferred = inferType(valNode, table);
+    if (inferred == TYPE_UNKNOWN && valNode->type != AST_NIL) {
+        printf("Semantic Error at line %d: Cannot infer type for variable '%s'\n",
+               node->token.line, varName);
+        return;
+    }
+ 
+    // שלב 2: חפש את המשתנה בכל ההיררכיה
+    SymbolRecord* existing = lookupSymbol(table, varName);
+ 
+    if (existing != NULL) {
+        // המשתנה כבר קיים בטבלה כלשהי
+        if (existing->type == TYPE_UNKNOWN) {
+            // הטיפוס לא היה ידוע — עדכן אותו עכשיו
+            existing->type = inferred;
+            existing->data.var_data.is_initialized = true;
+        } else if (existing->type != inferred && inferred != TYPE_UNKNOWN) {
+            // הטיפוס לא תואם — שגיאה סמנטית
+            printf("Semantic Error at line %d: Type mismatch for variable '%s'\n",
+                   node->token.line, varName);
+        }
+        // אחרת — הטיפוס תואם, אין שגיאה
     } else {
-        funcRecord->data.func_data.params.param_types = NULL;
+        // המשתנה לא קיים — הצהרה אימפליציטית
+        // קבע היקף לפי מיקום ההצהרה
+        ScopeType scope;
+        SymbolTable* targetTable;
+ 
+        if (isGlobalTable(table)) {
+            // אנחנו ברמה הגלובלית
+            scope = SCOPE_GLOBAL;
+            targetTable = table;
+        } else {
+            // אנחנו בתוך בלוק — המשתנה נחשב גלובלי אימפליציטי ב-Lua
+            scope = SCOPE_GLOBAL_IMPLICIT;
+            targetTable = getGlobalTable(table);
+        }
+ 
+        SymbolRecord* newRecord = createVarRecord(varName, inferred, scope, true);
+        insertSymbol(targetTable, newRecord);
     }
-    insertSymbol(currentTable, funcRecord);
-
-    // 2. צור טבלת סמלים חדשה (טבלת_פונקציה)
-    SymbolTable* funcTable = createSymbolTable(currentTable);
-
-    // 3. עבור כל פרמטר, צור רשומה בטבלה החדשה
-    for(int i = 0; i < paramCount; i++) {
-        ASTNode* paramNode = funcNode->children[i];
-        SymbolRecord* paramRecord = createVarRecord(paramNode->token.value, TYPE_UNKNOWN, SCOPE_BLOCK_LOCAL, true);
-        insertSymbol(funcTable, paramRecord);
+}
+// -------------------------------------------
+// analyzeSemanticLocal — הצהרת משתנה מקומי (local x = ...)
+// -------------------------------------------
+static void analyzeSemanticLocal(ASTNode* node, SymbolTable* table) {
+    ASTNode* varNode = node->children[0];
+    ASTNode* valNode = node->children[1]; // יכול להיות NULL אם אין ערך ראשוני
+    const char* varName = varNode->token.value;
+ 
+    SymbolType inferred = TYPE_UNKNOWN;
+    bool initialized = false;
+ 
+    if (valNode != NULL && valNode->type != AST_NIL) {
+        // יש ערך ראשוני שאינו nil
+        inferred = inferType(valNode, table);
+        initialized = true;
     }
-
-    // 4. קרא לניתוח הבלוק על גוף הפונקציה
-    // אנחנו מעבירים את funcRecord כדי שפקודות RETURN בתוך הבלוק ידעו את מי לעדכן
-    ASTNode* bodyNode = funcNode->children[paramCount];
-    analyzeNode(bodyNode, funcTable, funcRecord);
-
-    // 5+6. שלוף את הטיפוסים המעודכנים מתוך טבלת הפונקציה ועדכן את חתימת הפונקציה
-    for(int i = 0; i < paramCount; i++) {
-        ASTNode* paramNode = funcNode->children[i];
-        SymbolRecord* updatedParam = lookupSymbol(funcTable, paramNode->token.value);
-        if (updatedParam && updatedParam->type != TYPE_UNKNOWN) {
-            funcRecord->data.func_data.params.param_types[i] = updatedParam->type;
+    // אם הערך הוא nil או אין ערך — UNKNOWN ומאותחל=לא
+ 
+    // קבע היקף לפי עומק ההיררכיה
+    ScopeType scope;
+    if (isGlobalTable(table)) {
+        // local בדרגה העליונה של הקובץ
+        scope = SCOPE_FILE_LOCAL;
+    } else {
+        // local בתוך בלוק (פונקציה, if, לולאה)
+        scope = SCOPE_BLOCK_LOCAL;
+    }
+ 
+    // הכנס לטבלת הסמלים הנוכחית (לא לגלובלית!)
+    SymbolRecord* newRecord = createVarRecord(varName, inferred, scope, initialized);
+    insertSymbol(table, newRecord);
+}
+static void analyzeSemanticIf(ASTNode* node, SymbolTable* table) {
+    // children[0] = תנאי, children[1] = גוף if, children[2] = גוף else (יכול להיות NULL)
+    ASTNode* condNode = node->children[0];
+    ASTNode* bodyNode = node->children[1];
+    ASTNode* elseNode = node->children[2];
+ 
+    // בדוק שהתנאי הוא טיפוס בוליאני או מספרי
+    SymbolType condType = inferType(condNode, table);
+    if (condType != TYPE_BOOL && condType != TYPE_INT && condType != TYPE_UNKNOWN) {
+        printf("Semantic Error at line %d: if condition must be boolean or numeric\n",
+               node->token.line);
+    }
+ 
+    // צור היקף חדש לגוף ה-if
+    SymbolTable* ifScope = createSymbolTable(table);
+    analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, ifScope);
+ 
+    // אם יש else — צור היקף חדש נפרד
+    if (elseNode != NULL) {
+        SymbolTable* elseScope = createSymbolTable(table);
+        analyzeSemanticBlock(elseNode->children, elseNode->childCount, elseScope);
+    }
+}
+// -------------------------------------------
+// analyzeSemanticLoop — לולאת while או repeat/until
+// -------------------------------------------
+static void analyzeSemanticLoop(ASTNode* node, SymbolTable* table) {
+    ASTNode* condNode;
+    ASTNode* bodyNode;
+ 
+    if (node->type == AST_WHILE) {
+        // children[0] = תנאי, children[1] = גוף
+        condNode = node->children[0];
+        bodyNode = node->children[1];
+    } else {
+        // REPEAT: children[0] = גוף, children[1] = תנאי (until)
+        bodyNode = node->children[0];
+        condNode = node->children[1];
+    }
+ 
+    // בדוק תנאי
+    SymbolType condType = inferType(condNode, table);
+    if (condType != TYPE_BOOL && condType != TYPE_INT && condType != TYPE_UNKNOWN) {
+        printf("Semantic Error at line %d: Loop condition must be boolean or numeric\n",
+               node->token.line);
+    }
+ 
+    // צור היקף חדש לגוף הלולאה
+    SymbolTable* loopScope = createSymbolTable(table);
+    analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, loopScope);
+}
+// -------------------------------------------
+// analyzeSemanticFor — לולאת for מספרית (for i = start, limit, step do)
+// -------------------------------------------
+static void analyzeSemanticFor(ASTNode* node, SymbolTable* table) {
+    // children[0] = שם משתנה הספירה
+    // children[1] = התחלה, children[2] = סיום, children[3] = צעד, children[4] = גוף
+    ASTNode* varNode   = node->children[0];
+    ASTNode* startNode = node->children[1];
+    ASTNode* limitNode = node->children[2];
+    ASTNode* stepNode  = node->children[3];
+    ASTNode* bodyNode  = node->children[4];
+ 
+    // בדוק שההתחלה, הסיום והצעד הם מספריים
+    SymbolType startType = inferType(startNode, table);
+    SymbolType limitType = inferType(limitNode, table);
+    SymbolType stepType  = (stepNode != NULL) ? inferType(stepNode, table) : TYPE_INT;
+ 
+    bool startOk = (startType == TYPE_INT || startType == TYPE_DOUBLE || startType == TYPE_UNKNOWN);
+    bool limitOk = (limitType == TYPE_INT || limitType == TYPE_DOUBLE || limitType == TYPE_UNKNOWN);
+    bool stepOk  = (stepType  == TYPE_INT || stepType  == TYPE_DOUBLE || stepType  == TYPE_UNKNOWN);
+ 
+    if (!startOk || !limitOk || !stepOk) {
+        printf("Semantic Error at line %d: for loop bounds must be numeric\n",
+               node->token.line);
+    }
+ 
+    // צור היקף חדש לגוף הלולאה
+    SymbolTable* forScope = createSymbolTable(table);
+ 
+    // הכנס את משתנה הספירה לתוך ההיקף החדש (הוא BLOCK_LOCAL)
+    SymbolType iterType = (startType == TYPE_DOUBLE || limitType == TYPE_DOUBLE)
+                          ? TYPE_DOUBLE : TYPE_INT;
+    SymbolRecord* iterRecord = createVarRecord(
+        varNode->token.value, iterType, SCOPE_BLOCK_LOCAL, true);
+    insertSymbol(forScope, iterRecord);
+ 
+    // נתח את גוף הלולאה
+    analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, forScope);
+}
+// -------------------------------------------
+// analyzeSemanticFunction — הגדרת פונקציה
+// -------------------------------------------
+static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
+    // children[0] = שם הפונקציה
+    // children[1] = רשימת פרמטרים (BLOCK עם IDENTIFIER ילדים)
+    // children[2] = גוף הפונקציה
+    const char* funcName = node->children[0]->token.value;
+    ASTNode* paramsNode  = node->children[1];
+    ASTNode* bodyNode    = node->children[2];
+ 
+    int paramCount = paramsNode ? paramsNode->childCount : 0;
+ 
+    // בנה מערך טיפוסי פרמטרים — כולם UNKNOWN בשלב זה
+    SymbolType* paramTypes = NULL;
+    if (paramCount > 0) {
+        paramTypes = (SymbolType*)malloc(sizeof(SymbolType) * paramCount);
+        for (int i = 0; i < paramCount; i++) {
+            paramTypes[i] = TYPE_UNKNOWN;
+        }
+    }
+ 
+    // שלב 1: הכנס רשומת פונקציה לטבלת הסמלים הנוכחית
+    SymbolRecord* funcRecord = createFuncRecord(funcName, TYPE_UNKNOWN, paramTypes, paramCount);
+    insertSymbol(table, funcRecord);
+ 
+    // שלב 2: צור טבלת סמלים חדשה לגוף הפונקציה
+    SymbolTable* funcScope = createSymbolTable(table);
+ 
+    // שלב 3: הכנס את כל הפרמטרים כ-BLOCK_LOCAL בטבלת הפונקציה
+    if (paramsNode != NULL) {
+        for (int i = 0; i < paramsNode->childCount; i++) {
+            const char* paramName = paramsNode->children[i]->token.value;
+            SymbolRecord* paramRecord = createVarRecord(
+                paramName, TYPE_UNKNOWN, SCOPE_BLOCK_LOCAL, true);
+            insertSymbol(funcScope, paramRecord);
+        }
+    }
+ 
+    // שלב 4: נתח את גוף הפונקציה
+    SymbolRecord* prevFunc = currentFunctionScope;
+    currentFunctionScope = funcRecord;
+    
+    analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, funcScope);
+    
+    currentFunctionScope = prevFunc;
+ 
+    // שלב 5: עדכן את טיפוסי הפרמטרים ברשומת הפונקציה לפי מה שנלמד
+    if (paramCount > 0 && paramTypes != NULL) {
+        for (int i = 0; i < paramCount; i++) {
+            const char* paramName = paramsNode->children[i]->token.value;
+            SymbolRecord* paramRecord = lookupSymbol(funcScope, paramName);
+            if (paramRecord) {
+                funcRecord->data.func_data.params.param_types[i] = paramRecord->type;
+            }
+        }
+        free(paramTypes);
+    }
+}
+ 
+// -------------------------------------------
+// analyzeSemanticReturn — משפט return
+// -------------------------------------------
+// -------------------------------------------
+// analyzeSemanticReturn — משפט return
+// -------------------------------------------
+static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
+    if (node->childCount == 0 || node->children[0] == NULL) {
+        // return ללא ערך — החזרה מסוג void
+        return;
+    }
+ 
+    // שלב 1: הסק את הטיפוס של ביטוי ההחזרה
+    SymbolType returnType = inferType(node->children[0], table);
+ 
+    // שלב 2: עדכון הפונקציה הנוכחית (בלי לחפש בטבלה!)
+    if (currentFunctionScope != NULL) {
+        SymbolType currentRetType = currentFunctionScope->data.func_data.return_type;
+        // מתעדכן רק אם עוד לא נקבע, או משתדרג ל-Double אם היה Int
+        if (currentRetType == TYPE_UNKNOWN || currentRetType == TYPE_INT) {
+            currentFunctionScope->data.func_data.return_type = returnType;
         }
     }
 }
-void analyzeSemanticCall(ASTNode* callNode, SymbolTable* currentTable, SymbolRecord* currentFunction) {
-    const char* funcName = callNode->token.value;
-    
-    // 1+2. שלוף וחפש את שם הפונקציה
-    SymbolRecord* funcRecord = lookupSymbol(currentTable, funcName);
-    
-    // 3. אם השם לא נמצא
-    if (!funcRecord) {
-        printf("Semantic Error at line %d: Attempt to call undefined function '%s'\n", callNode->token.line, funcName);
+ 
+// -------------------------------------------
+// analyzeSemanticCall — קריאת פונקציה
+// -------------------------------------------
+static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
+    const char* funcName = node->token.value;
+ 
+    // שלב 1: חפש את הפונקציה בטבלת הסמלים
+    SymbolRecord* funcRecord = lookupSymbol(table, funcName);
+    if (funcRecord == NULL) {
+        printf("Semantic Error at line %d: Call to undefined function '%s'\n",
+               node->token.line, funcName);
         return;
     }
-    
-    // 4. אם טיפוס לא FUNCTION
     if (funcRecord->type != TYPE_FUNCTION) {
-        printf("Semantic Error at line %d: Attempt to call non-function identifier '%s'\n", callNode->token.line, funcName);
+        printf("Semantic Error at line %d: '%s' is not a function\n",
+               node->token.line, funcName);
         return;
     }
-    
-    // 5. בדיקת התאמת מספר ארגומנטים
-    int argCount = callNode->childCount;
-    if (argCount != funcRecord->data.func_data.params.param_count) {
-        printf("Semantic Error at line %d: Argument count mismatch for '%s'. Expected %d, got %d.\n", 
-               callNode->token.line, funcName, funcRecord->data.func_data.params.param_count, argCount);
+ 
+    // שלב 2: בדוק שמספר הארגומנטים תואם
+    int expectedParams = funcRecord->data.func_data.params.param_count;
+    int givenArgs      = node->childCount;
+ 
+    if (givenArgs != expectedParams) {
+        printf("Semantic Error at line %d: Function '%s' expects %d arguments but got %d\n",
+               node->token.line, funcName, expectedParams, givenArgs);
         return;
     }
-    
-    // 6. עבור כל ארגומנט
-    for (int i = 0; i < argCount; i++) {
-        ASTNode* argNode = callNode->children[i];
-        
-        // מנתחים את הארגומנט עצמו במקרה שהוא משוואה מורכבת
-        analyzeNode(argNode, currentTable, currentFunction);
-        
-        // 6.1 הסקת הטיפוס של הארגומנט שנשלח
-        SymbolType argType = inferType(argNode, currentTable);
-        
-        // 6.2 שלוף טיפוס מצופה מהרשומה של הפונקציה
+ 
+    // שלב 3: עבור כל ארגומנט — הסק טיפוס ובדוק תאימות עם הפרמטר המצופה
+    for (int i = 0; i < givenArgs; i++) {
+        SymbolType argType = inferType(node->children[i], table);
         SymbolType expectedType = funcRecord->data.func_data.params.param_types[i];
-        
-        // 6.3 הסקת טיפוסים דינמית מזמן קריאה!
+ 
         if (expectedType == TYPE_UNKNOWN) {
-            // 6.3.1 עדכון רשימת הפרמטרים
+            // הסקת טיפוס מזמן קריאה — עדכן את הפרמטר
             funcRecord->data.func_data.params.param_types[i] = argType;
-        } else {
-            // 6.3.1 אם הטיפוס כבר ידוע - בצע בדיקת התאמה (Type Checking)
-            if (argType != expectedType && argType != TYPE_UNKNOWN) {
-                // המרה אוטומטית בין Int ל-Double
-                if ((expectedType == TYPE_INT && argType == TYPE_DOUBLE) || 
-                    (expectedType == TYPE_DOUBLE && argType == TYPE_INT)) {
-                    funcRecord->data.func_data.params.param_types[i] = TYPE_DOUBLE;
-                } else {
-                    printf("Semantic Error at line %d: Type mismatch in argument %d of function '%s'\n", 
-                           callNode->token.line, i+1, funcName);
-                }
-            }
+        } else if (argType != expectedType && argType != TYPE_UNKNOWN) {
+            printf("Semantic Error at line %d: Argument %d to function '%s' has wrong type\n",
+                   node->token.line, i + 1, funcName);
         }
     }
 }
-void analyzeSemanticReturn(ASTNode* retNode, SymbolTable* currentTable, SymbolRecord* currentFunction) {
-    // 1. אם לצומת_חזרה יש ביטוי
-    if (retNode->childCount > 0) {
-        ASTNode* exprNode = retNode->children[0];
-        
-        analyzeNode(exprNode, currentTable, currentFunction);
-        
-        // 1.1 קרא ל inferType
-        SymbolType retType = inferType(exprNode, currentTable);
-        
-        // 1.2 שמור את הטיפוס שהוסק בתוך שדה טיפוס_החזרה של הפונקציה שעוטפת אותנו
-        if (currentFunction && currentFunction->type == TYPE_FUNCTION) {
-            SymbolType currentRetType = currentFunction->data.func_data.return_type;
-            
-            // מתעדכן אם עוד לא נקבע, או משודרג ל-Double אם יש החזרות שונות באותה פונקציה
-            if (currentRetType == TYPE_UNKNOWN || currentRetType == TYPE_INT) {
-                currentFunction->data.func_data.return_type = retType;
-            } else if (currentRetType == TYPE_DOUBLE && retType == TYPE_INT) {
-                // זה תקין, C יודעת להמיר Int ל-Double בחזרה
-            } else if (currentRetType != retType && retType != TYPE_UNKNOWN) {
-                printf("Semantic Error at line %d: Function has conflicting return types.\n", retNode->token.line);
-            }
+// -------------------------------------------
+// analyzeSemanticBlock — לב האנליזה, מעבד רשימת צמתים
+// -------------------------------------------
+static void analyzeSemanticBlock(ASTNode** nodes, int count, SymbolTable* table) {
+    for (int i = 0; i < count; i++) {
+        ASTNode* node = nodes[i];
+        if (!node) continue;
+ 
+        switch (node->type) {
+            case AST_ASSIGNMENT:
+                analyzeSemanticAssign(node, table);
+                break;
+ 
+            case AST_LOCAL_ASSIGN:
+                analyzeSemanticLocal(node, table);
+                break;
+ 
+            case AST_IF:
+                analyzeSemanticIf(node, table);
+                break;
+ 
+            case AST_WHILE:
+            case AST_REPEAT:
+                analyzeSemanticLoop(node, table);
+                break;
+ 
+            case AST_FUNCTION_DECL:
+                analyzeSemanticFunction(node, table);
+                break;
+ 
+            case AST_FOR:
+                analyzeSemanticFor(node, table);
+                break;
+ 
+            case AST_FUNCTION_CALL:
+                analyzeSemanticCall(node, table);
+                break;
+ 
+            case AST_RETURN:
+                analyzeSemanticReturn(node, table);
+                break;
+ 
+            default:
+                // צמתים אחרים (הערות, שורות ריקות) — המשך
+                break;
         }
     }
 }
-// ==========================================
-// חלק 5: פונקציות ניתוח מבני בקרה (Control Flow)
-// ==========================================
+ 
+// -------------------------------------------
+// analyzeSemantic — נקודת הכניסה הראשית
+// -------------------------------------------
+SymbolTable* analyzeSemantic(ASTNode* root) {
+    if (!root) return NULL;
+ 
+    // שלב 1: צור טבלת סמלים גלובלית ריקה
+    SymbolTable* globalTable = createSymbolTable(NULL);
+ 
+    printf("\n--- Starting Semantic Analysis ---\n");
 
-void analyzeSemanticIf(ASTNode* node, SymbolTable* currentTable, SymbolRecord* currentFunction) {
-    // 1. ניתוח התנאי
-    analyzeNode(node->children[0], currentTable, currentFunction);
-    SymbolType condType = inferType(node->children[0], currentTable);
-    if (condType != TYPE_BOOL && condType != TYPE_INT && condType != TYPE_UNKNOWN) {
-        printf("Semantic Error at line %d: Condition must be boolean or numeric.\n", node->token.line);
-    }
-    
-    // 2. ניתוח בלוק ה-IF (אמת)
-    analyzeSemanticBlock(node->children[1], currentTable, currentFunction);
+    // שלב 2: נתח את כל הצמתים מהשורש (השתמש בנתב הראשי או ב-Block)
+    // במקרה שלך, הבלוק שמקבל את המערך והכמות:
+    analyzeSemanticBlock(root->children, root->childCount, globalTable);
+ 
+    printf("--- Semantic Analysis completed successfully! ---\n");
 
-    // 3. ניתוח בלוק ה-ELSE או ה-ELSEIF (שקר) - אם קיים
-    if (node->childCount > 2) {
-        ASTNode* elseNode = node->children[2];
-        if (elseNode->type == AST_IF) {
-            // שרשור elseif (קריאה רקורסיבית לפונקציית ה-IF)
-            analyzeSemanticIf(elseNode, currentTable, currentFunction);
-        } else {
-            // בלוק else רגיל
-            analyzeSemanticBlock(elseNode, currentTable, currentFunction);
-        }
-    }
-}
-
-void analyzeSemanticWhile(ASTNode* node, SymbolTable* currentTable, SymbolRecord* currentFunction) {
-    // 1. ניתוח התנאי
-    analyzeNode(node->children[0], currentTable, currentFunction);
-    SymbolType condType = inferType(node->children[0], currentTable);
-    if (condType != TYPE_BOOL && condType != TYPE_INT && condType != TYPE_UNKNOWN) {
-        printf("Semantic Error at line %d: Condition must be boolean or numeric.\n", node->token.line);
-    }
-    
-    // 2. ניתוח גוף הלולאה
-    analyzeSemanticBlock(node->children[1], currentTable, currentFunction);
-}
-
-void analyzeSemanticFor(ASTNode* node, SymbolTable* currentTable, SymbolRecord* currentFunction) {
-    // יצירת טבלת סמלים מקומית ללולאה (משתנה האיטרציה חי רק בפנים)
-    SymbolTable* forTable = createSymbolTable(currentTable);
-    
-    // ילד 0: משתנה הלולאה
-    ASTNode* idNode = node->children[0];
-    SymbolRecord* iteratorVar = createVarRecord(idNode->token.value, TYPE_INT, SCOPE_BLOCK_LOCAL, true);
-    insertSymbol(forTable, iteratorVar);
-
-    // ניתוח ביטויי הלולאה (התחלה, סיום, קפיצה) - רצים עד הילד לפני האחרון (שהוא הבלוק)
-    for (int i = 1; i < node->childCount - 1; i++) {
-        analyzeNode(node->children[i], currentTable, currentFunction);
-    }
-
-    // ניתוח הבלוק עצמו - אנו מעבירים לו את טבלת הלולאה שיצרנו
-    ASTNode* bodyNode = node->children[node->childCount - 1];
-    analyzeNode(bodyNode, forTable, currentFunction); 
+    // שלב 3: פשוט מחזירים את הטבלה למי שקרא לפונקציה!
+    return globalTable;
 }
