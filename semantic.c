@@ -233,10 +233,41 @@ SymbolType inferType(ASTNode* node, SymbolTable* table) {
         }
  
         // ביטוי בינארי — הסקה bottom-up: שמאל ← ימין ← שורש
+        // ביטוי בינארי — הסקה bottom-up: שמאל ← ימין ← שורש
         case AST_BINOP: {
             SymbolType leftType  = inferType(node->children[0], table);
             SymbolType rightType = inferType(node->children[1], table);
-            return checkTypeCompatibility(leftType, node->token.type, rightType, node->token.line);
+            
+            // --- התיקון החכם: הסקת טיפוסים מבוססת שכנים (Type Propagation) ---
+            TokenType op = node->token.type;
+            if (op == TOKEN_OP_PLUS || op == TOKEN_OP_MINUS || op == TOKEN_OP_MUL || 
+                op == TOKEN_OP_DIV || op == TOKEN_OP_MOD || op == TOKEN_OP_POW ||
+                op == TOKEN_OP_LT || op == TOKEN_OP_GT || op == TOKEN_OP_LTE || op == TOKEN_OP_GTE) {
+                
+                // אם צד שמאל לא ידוע - נציץ על צד ימין כדי לנחש!
+                if (leftType == TYPE_UNKNOWN && node->children[0]->type == AST_IDENTIFIER) {
+                    SymbolRecord* rec = lookupSymbol(table, node->children[0]->token.value);
+                    if (rec) {
+                        // אם זה מודולו זה חייב להיות int. אחרת, נשווה לטיפוס של השכן!
+                        SymbolType guessedType = (op == TOKEN_OP_MOD) ? TYPE_INT : 
+                                                 (rightType == TYPE_DOUBLE) ? TYPE_DOUBLE : TYPE_INT;
+                        rec->type = guessedType;
+                        leftType = guessedType;
+                    }
+                }
+                
+                // אם צד ימין לא ידוע - נציץ על צד שמאל כדי לנחש!
+                if (rightType == TYPE_UNKNOWN && node->children[1]->type == AST_IDENTIFIER) {
+                    SymbolRecord* rec = lookupSymbol(table, node->children[1]->token.value);
+                    if (rec) {
+                        SymbolType guessedType = (op == TOKEN_OP_MOD) ? TYPE_INT : 
+                                                 (leftType == TYPE_DOUBLE) ? TYPE_DOUBLE : TYPE_INT;
+                        rec->type = guessedType;
+                        rightType = guessedType;
+                    }
+                }
+            }
+            return checkTypeCompatibility(leftType, op, rightType, node->token.line);
         }
  
         // קריאת פונקציה — מחזיר את טיפוס ההחזרה
@@ -314,11 +345,6 @@ static void analyzeSemanticAssign(ASTNode* node, SymbolTable* table) {
  
     // שלב 1: הסק את הטיפוס מצד ימין
     SymbolType inferred = inferType(valNode, table);
-    if (inferred == TYPE_UNKNOWN && valNode->type != AST_NIL) {
-        printf("Semantic Error at line %d: Cannot infer type for variable '%s'\n",
-               node->token.line, varName);
-        return;
-    }
  
     // שלב 2: חפש את המשתנה בכל ההיררכיה
     SymbolRecord* existing = lookupSymbol(table, varName);
@@ -391,7 +417,7 @@ static void analyzeSemanticIf(ASTNode* node, SymbolTable* table) {
     // children[0] = תנאי, children[1] = גוף if, children[2] = גוף else (יכול להיות NULL)
     ASTNode* condNode = node->children[0];
     ASTNode* bodyNode = node->children[1];
-    ASTNode* elseNode = node->children[2];
+    ASTNode* elseNode = (node->childCount > 2) ? node->children[2] : NULL;
  
     // בדוק שהתנאי הוא טיפוס בוליאני או מספרי
     SymbolType condType = inferType(condNode, table);
@@ -447,8 +473,8 @@ static void analyzeSemanticFor(ASTNode* node, SymbolTable* table) {
     ASTNode* varNode   = node->children[0];
     ASTNode* startNode = node->children[1];
     ASTNode* limitNode = node->children[2];
-    ASTNode* stepNode  = node->children[3];
-    ASTNode* bodyNode  = node->children[4];
+    ASTNode* stepNode = (node->childCount == 5) ? node->children[3] : NULL;
+    ASTNode* bodyNode = node->children[node->childCount - 1];
  
     // בדוק שההתחלה, הסיום והצעד הם מספריים
     SymbolType startType = inferType(startNode, table);
@@ -534,17 +560,6 @@ static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
         }
     }
     
-    //THIS DEBUG DELETE
-    if (paramCount > 0 && paramTypes != NULL) {
-        for (int i = 0; i < paramCount; i++) {
-            const char* paramName = node->children[i]->token.value;
-            SymbolRecord* paramRecord = lookupSymbol(funcScope, paramName);
-            if (paramRecord) {
-                // המערך paramTypes כבר יושב בתוך funcRecord
-                funcRecord->data.func_data.params.param_types[i] = paramRecord->type;
-            }
-        }
-    }
     
     // ---> התיקון: שמירת הטבלה המקומית במערך במקום להדפיס אותה <---
     // שמירת הטבלה המקומית במערך במקום להדפיס אותה עכשיו
@@ -565,25 +580,42 @@ static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
 // -------------------------------------------
 // analyzeSemanticReturn — משפט return
 // -------------------------------------------
-// -------------------------------------------
-// analyzeSemanticReturn — משפט return
-// -------------------------------------------
 static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
     if (node->childCount == 0 || node->children[0] == NULL) {
         // return ללא ערך — החזרה מסוג void
+        if (currentFunctionScope != NULL) {
+            if (currentFunctionScope->data.func_data.return_type == TYPE_UNKNOWN) {
+                currentFunctionScope->data.func_data.return_type = TYPE_VOID;
+            } else if (currentFunctionScope->data.func_data.return_type != TYPE_VOID) {
+                printf("Semantic Error at line %d: Function '%s' returns both void and non-void values\n",
+                       node->token.line, currentFunctionScope->name);
+            }
+        }
         return;
     }
     
- 
     // שלב 1: הסק את הטיפוס של ביטוי ההחזרה
     SymbolType returnType = inferType(node->children[0], table);
  
-    // שלב 2: עדכון הפונקציה הנוכחית (בלי לחפש בטבלה!)
+    // שלב 2: עדכון ואיחוד טיפוס ההחזרה של הפונקציה
     if (currentFunctionScope != NULL) {
         SymbolType currentRetType = currentFunctionScope->data.func_data.return_type;
-        // מתעדכן רק אם עוד לא נקבע, או משתדרג ל-Double אם היה Int
-        if (currentRetType == TYPE_UNKNOWN || currentRetType == TYPE_INT) {
+        
+        if (currentRetType == TYPE_UNKNOWN) {
+            // ה-return הראשון שפגשנו קובע את הטיפוס ההתחלתי
             currentFunctionScope->data.func_data.return_type = returnType;
+        } 
+        else if (currentRetType == TYPE_INT && returnType == TYPE_DOUBLE) {
+            // שדרוג (Promotion) מ-int ל-double
+            currentFunctionScope->data.func_data.return_type = TYPE_DOUBLE;
+        }
+        else if (currentRetType == TYPE_DOUBLE && returnType == TYPE_INT) {
+            // כבר double והשני int - הכל תקין, אין צורך לשנות כלום
+        }
+        else if (currentRetType != returnType && returnType != TYPE_UNKNOWN) {
+            // התנגשות קריטית (למשל מחזיר int במקום אחד ו-string במקום אחר)
+            printf("Semantic Error at line %d: Inconsistent return types in function '%s'\n",
+                   node->token.line, currentFunctionScope->name);
         }
     }
 }

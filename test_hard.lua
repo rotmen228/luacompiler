@@ -22,7 +22,7 @@ end
 
 -- 2. Heavy control flow with loops and math
 function collatz_steps(n)
-    local steps = 0
+    steps = 0
     while n > 1 do
         -- Local variable inside a while loop
         local rem = n % 2
