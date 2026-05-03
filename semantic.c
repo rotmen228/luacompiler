@@ -16,6 +16,20 @@ static void analyzeSemanticCall(ASTNode* node, SymbolTable* table);
 static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table);
 static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolType right, int line);
 
+
+
+
+//THIS IS FOR DEBUG DELETE LATER
+// ---> הוסף את 3 השורות האלו: מערך לאיסוף הטבלאות המקומיות <---
+// מערך לאיסוף הטבלאות המקומיות כדי שנוכל להדפיס אותן בסוף הריצה
+static SymbolTable* allScopes[100];
+static const char* allScopeNames[100];
+static const char* allFuncParamNames[100][20]; // <--- הוסף את השורה הזו!
+static int scopeCount = 0;
+//END
+
+
+
 // ==========================================
 // פונקציות דיבאג והדפסה לטבלת הסמלים
 // ==========================================
@@ -75,6 +89,20 @@ void printSymbolTable(SymbolTable* table, const char* scopeName) {
         printf("(Empty Table)\n");
     }
     printf("==========================================================\n\n");
+}
+// פונקציה להדפסה מרוכזת של כל הטבלאות הסופיות בסיום האנליזה
+void printFinalSymbolTables(SymbolTable* globalScope) {
+    printf("\n=== FINAL SYMBOL TABLES ===\n");
+    
+    // 1. הדפסת כל הטבלאות המקומיות (הפונקציות) בגרסתן הסופית והמעודכנת
+    for (int i = 0; i < scopeCount; i++) {
+        printSymbolTable(allScopes[i], allScopeNames[i]);
+    }
+    
+    // 2. הדפסת הטבלה הגלובלית
+    if (globalScope != NULL) {
+        printSymbolTable(globalScope, "Global Scope");
+    }
 }
 
 static unsigned int hash(const char* str) {
@@ -506,7 +534,32 @@ static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
         }
     }
     
-    printSymbolTable(funcScope, funcName);
+    //THIS DEBUG DELETE
+    if (paramCount > 0 && paramTypes != NULL) {
+        for (int i = 0; i < paramCount; i++) {
+            const char* paramName = node->children[i]->token.value;
+            SymbolRecord* paramRecord = lookupSymbol(funcScope, paramName);
+            if (paramRecord) {
+                // המערך paramTypes כבר יושב בתוך funcRecord
+                funcRecord->data.func_data.params.param_types[i] = paramRecord->type;
+            }
+        }
+    }
+    
+    // ---> התיקון: שמירת הטבלה המקומית במערך במקום להדפיס אותה <---
+    // שמירת הטבלה המקומית במערך במקום להדפיס אותה עכשיו
+    if (scopeCount < 100) {
+        allScopes[scopeCount] = funcScope;
+        allScopeNames[scopeCount] = funcName;
+        
+        // ---> התיקון: שומרים את שמות הפרמטרים (כמו n) במערך החדש <---
+        for (int i = 0; i < paramCount && i < 20; i++) {
+            allFuncParamNames[scopeCount][i] = node->children[i]->token.value;
+        }
+        
+        scopeCount++;
+    }
+    //END
 }
  
 // -------------------------------------------
@@ -520,6 +573,7 @@ static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
         // return ללא ערך — החזרה מסוג void
         return;
     }
+    
  
     // שלב 1: הסק את הטיפוס של ביטוי ההחזרה
     SymbolType returnType = inferType(node->children[0], table);
@@ -572,8 +626,20 @@ static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
         SymbolType expectedType = funcRecord->data.func_data.params.param_types[i];
  
         if (expectedType == TYPE_UNKNOWN) {
-            // ---> השינוי הקריטי: עדכון הטיפוס הלא-ידוע לטיפוס שגילינו עכשיו!
+            // 1. עדכון הטיפוס ברשומת הפונקציה הגלובלית (מה שעשינו קודם)
             funcRecord->data.func_data.params.param_types[i] = argType;
+            
+            // 2. התיקון הקריטי: חזרה לטבלה המקומית של הפונקציה ועדכון המשתנה n עצמו!
+            for (int j = 0; j < scopeCount; j++) {
+                if (strcmp(allScopeNames[j], funcName) == 0) {
+                    const char* paramName = allFuncParamNames[j][i];
+                    SymbolRecord* paramRec = lookupSymbol(allScopes[j], paramName);
+                    if (paramRec) {
+                        paramRec->type = argType; // הקסם! n סוף סוף הופך ל-int
+                    }
+                    break;
+                }
+            }
             
         } else if (argType != expectedType && argType != TYPE_UNKNOWN) {
             printf("Semantic Error at line %d: Argument %d to function '%s' has wrong type\n",
@@ -637,6 +703,8 @@ static void analyzeSemanticBlock(ASTNode** nodes, int count, SymbolTable* table)
 SymbolTable* analyzeSemantic(ASTNode* root) {
     if (!root) return NULL;
  
+    //DEBUG
+    scopeCount = 0;
     // שלב 1: צור טבלת סמלים גלובלית ריקה
     SymbolTable* globalTable = createSymbolTable(NULL);
  

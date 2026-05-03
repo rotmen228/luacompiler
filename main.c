@@ -102,10 +102,8 @@ int main() {
                 // 4. הרצת הניתוח הסמנטי (Semantic Analysis)
                 SymbolTable* globalScope = analyzeSemantic(root);
                 
-                // 5. הדפסת טבלת הסמלים הגלובלית בסיום
-                if (globalScope != NULL) {
-                    printSymbolTable(globalScope, "Global Scope");
-                }
+                // 5. הדפסת כל הטבלאות רק בסיום התהליך!
+                printFinalSymbolTables(globalScope);
                 
             } else {
                 printf("Failed to build AST.\n");

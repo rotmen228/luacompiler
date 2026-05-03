@@ -227,16 +227,19 @@ TokenList runLexer(const char* sourceCode) {
         buffer[bufIdx] = '\0';
         
         // כאן זיהינו אילו תווים נחתכו, ועכשיו מאפיינים אותם לפי הקבוצה
-        if (isalpha(buffer[0]) || buffer[0] == '_') {
+if (startPos[0] == '"' || startPos[0] == '\'') {
+            addToken(&list, TOKEN_STRING, buffer, currentLine);
+        }
+        // 2. רק אז בודקים אם זו אות (שם משתנה או מילת מפתח)
+        else if (isalpha(buffer[0]) || buffer[0] == '_') {
             TokenType type = identifyKeywordOrId(buffer);
             addToken(&list, type, buffer, currentLine);
         } 
+        // 3. ואז מספרים
         else if (isdigit(buffer[0])) {
             addToken(&list, TOKEN_NUMBER, buffer, currentLine);
-        } 
-        else if (startPos[0] == '"' || startPos[0] == '\'') {
-            addToken(&list, TOKEN_STRING, buffer, currentLine);
         }
+        // 4. וכל השאר (אופרטורים)
         else {
             TokenType type = identifyOperator(buffer);
             if (type != TOKEN_ERROR) {
