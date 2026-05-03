@@ -99,7 +99,9 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
         // Leaf: number or string — emit the raw token value
         case AST_NUMBER:
         case AST_STRING:
+            buf_append("\"");
             buf_append(node->token.value);
+            buf_append("\"");
             break;
 
         // Leaf: true / false / identifier
@@ -129,6 +131,22 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
                 buf_append("(");
                 generateExpression(left, table);
                 buf_append(" != ");
+                generateExpression(right, table);
+                buf_append(")");
+                break;
+            }
+            if (node->token.type == TOKEN_KW_AND) {
+                buf_append("(");
+                generateExpression(left, table);
+                buf_append(" && ");
+                generateExpression(right, table);
+                buf_append(")");
+                break;
+            }
+            if (node->token.type == TOKEN_KW_OR) {
+                buf_append("(");
+                generateExpression(left, table);
+                buf_append(" || ");
                 generateExpression(right, table);
                 buf_append(")");
                 break;
@@ -209,6 +227,7 @@ static void generateGlobalDeclarations(SymbolTable* globalTable) {
 // ============================================================
 static void generateFunctions(ASTNode* root, SymbolTable* table) {
     if (!root) return;
+    
 
     for (int i = 0; i < root->childCount; i++) {
         ASTNode* node = root->children[i];
