@@ -34,7 +34,7 @@ int is_prime(int n) {
 int collatz_steps(int n) {
     steps = 0;
     while ((n > 1)) {
-        void* rem = (n % 2);
+        int rem = (n % 2);
         if ((rem == 0)) {
             n = (n / 2);
         } else {
@@ -49,10 +49,10 @@ int complex_calculation(int limit) {
     int sum = 0;
     int i = 1;
     while ((i <= limit)) {
-        void* current_val = i;
-        void* add_to_sum = 0;
+        int current_val = i;
+        int add_to_sum = 0;
         if ((is_prime(current_val) == 1)) {
-            void* current_val = (current_val * 10);
+            int current_val = (current_val * 10);
             add_to_sum = current_val;
         } else if (((current_val > 10) && (collatz_steps(current_val) > 15))) {
             add_to_sum = (current_val * 2);

@@ -15,6 +15,8 @@ static void analyzeSemanticFor(ASTNode* node, SymbolTable* table);
 static void analyzeSemanticCall(ASTNode* node, SymbolTable* table);
 static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table);
 static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolType right, int line);
+SymbolTable* getFuncScope(const char* funcName);
+
 
 // Array collecting every function-scope table so codegen can retrieve them.
 static SymbolTable* allScopes[100];
@@ -114,7 +116,22 @@ SymbolTable* createSymbolTable(SymbolTable* parent) {
     SymbolTable* table = (SymbolTable*)malloc(sizeof(SymbolTable));
     if (!table) { printf("Memory allocation failed for SymbolTable\n"); exit(1); }
     for (int i = 0; i < HASH_TABLE_SIZE; i++) table->buckets[i] = NULL;
-    table->parent_table = parent;
+    table->parent_table  = parent;
+    table->children      = NULL;
+    table->childCount    = 0;
+    table->childCapacity = 0;
+    table->nextChild     = 0;
+
+    // Auto-register as a child of our parent so codegen can walk the tree.
+    if (parent != NULL) {
+        if (parent->childCount >= parent->childCapacity) {
+            int newCap = (parent->childCapacity == 0) ? 4 : parent->childCapacity * 2;
+            parent->children = (SymbolTable**)realloc(
+                parent->children, newCap * sizeof(SymbolTable*));
+            parent->childCapacity = newCap;
+        }
+        parent->children[parent->childCount++] = table;
+    }
     return table;
 }
 
@@ -158,6 +175,13 @@ SymbolRecord* lookupSymbol(SymbolTable* table, const char* name) {
         current = current->parent_table;
     }
     return NULL;
+}
+
+// Returns the next child scope of `table` in creation order, advancing
+// the cursor.  Codegen calls this once per block that creates a new scope.
+SymbolTable* getNextChildScope(SymbolTable* table) {
+    if (!table || table->nextChild >= table->childCount) return NULL;
+    return table->children[table->nextChild++];
 }
 
 static SymbolTable* getGlobalTable(SymbolTable* table) {

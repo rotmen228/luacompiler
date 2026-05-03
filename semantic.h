@@ -54,10 +54,18 @@ typedef struct HashEntry {
 
 #define HASH_TABLE_SIZE 256
 
-// טבלת הסמלים עצמה - היררכית! מצביעה לאבא שלה
+// טבלת הסמלים עצמה - היררכית! מצביעה לאבא שלה.
+// Children are stored in creation order (= block appearance order in the
+// source), so codegen can consume them in the same order to always get
+// the correct scope when entering a nested block.
+#define MAX_CHILD_SCOPES 64
 typedef struct SymbolTable {
     HashEntry* buckets[HASH_TABLE_SIZE];
-    struct SymbolTable* parent_table;
+    struct SymbolTable*  parent_table;
+    struct SymbolTable** children;      // dynamic array of child scopes
+    int                  childCount;    // how many children created so far
+    int                  childCapacity; // allocated capacity
+    int                  nextChild;     // codegen cursor: next child to consume
 } SymbolTable;
 
 // --- חתימות לפונקציות הניהול ---
@@ -65,6 +73,11 @@ SymbolTable* createSymbolTable(SymbolTable* parent);
 void insertSymbol(SymbolTable* table, SymbolRecord* record);
 SymbolRecord* lookupSymbol(SymbolTable* table, const char* name);
 SymbolRecord* createVarRecord(const char* name, SymbolType type, ScopeType scope, bool is_init);
+
+// Returns (and advances past) the next child scope of `table` in the
+// order they were created during semantic analysis.  Codegen calls this
+// once every time it enters a block that introduces a new scope.
+SymbolTable* getNextChildScope(SymbolTable* table);
 
 // --- חתימות לפונקציות האנליזה המרכזיות (נכתוב בהמשך) ---
 SymbolType inferType(ASTNode* node, SymbolTable* table);

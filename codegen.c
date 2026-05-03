@@ -333,8 +333,9 @@ static void generateLocalAssign(ASTNode* node, int indent, SymbolTable* table) {
 
 // ============================================================
 // generateIf — if / elseif / else
-// FIX #6: Recursive elseif handling so chains of any length work
-// correctly and no spurious closing brace is emitted.
+// Each branch body has its own child scope created during semantic
+// analysis (in the exact order they appear in the source).  We call
+// getNextChildScope(table) once per branch to follow that order.
 // ============================================================
 static void generateIf(ASTNode* node, int indent, SymbolTable* table) {
     write_indent(indent);
@@ -342,7 +343,9 @@ static void generateIf(ASTNode* node, int indent, SymbolTable* table) {
     generateExpression(node->children[0], table);
     buf_append(") {\n");
 
-    generateBlock(node->children[1], indent + 1, table);
+    // Consume the child scope for the if-body.
+    SymbolTable* ifScope = getNextChildScope(table);
+    generateBlock(node->children[1], indent + 1, ifScope ? ifScope : table);
 
     if (node->childCount > 2 && node->children[2] != NULL &&
         node->children[2]->type != AST_NIL) {
@@ -350,62 +353,39 @@ static void generateIf(ASTNode* node, int indent, SymbolTable* table) {
         ASTNode* elseNode = node->children[2];
 
         if (elseNode->type == AST_IF) {
-            // elseif: close current brace, open else-if, then recurse.
-            // generateIf will write the "if (...) {", body, and closing "}" itself.
-            write_indent(indent);
-            buf_append("} else ");
-            // Temporarily suppress the leading indent that generateIf writes
-            // by calling it with the same indent — it uses write_indent at the
-            // start, but we've already written "} else ".  We handle this by
-            // inlining one level:
-            buf_append("if (");
-            generateExpression(elseNode->children[0], table);
-            buf_append(") {\n");
-            generateBlock(elseNode->children[1], indent + 1, table);
+            // Walk the whole elseif chain iteratively so every branch
+            // consumes exactly one child scope in creation order.
+            ASTNode* cur = elseNode;
+            while (cur != NULL && cur->type == AST_IF) {
+                write_indent(indent);
+                buf_append("} else if (");
+                generateExpression(cur->children[0], table);
+                buf_append(") {\n");
 
-            // Recurse for the tail of the chain (further elseif/else)
-            if (elseNode->childCount > 2 && elseNode->children[2] != NULL &&
-                elseNode->children[2]->type != AST_NIL) {
+                SymbolTable* branchScope = getNextChildScope(table);
+                generateBlock(cur->children[1], indent + 1,
+                              branchScope ? branchScope : table);
 
-                ASTNode* tail = elseNode->children[2];
-                if (tail->type == AST_IF) {
-                    // Another elseif — close and recurse via full generateIf
-                    // but we need to suppress its opening indent.  Use the
-                    // same inline trick to keep the chain on one brace-family.
-                    // Walk the whole chain iteratively to handle N levels.
-                    ASTNode* cur = tail;
-                    while (cur != NULL && cur->type == AST_IF) {
-                        write_indent(indent);
-                        buf_append("} else if (");
-                        generateExpression(cur->children[0], table);
-                        buf_append(") {\n");
-                        generateBlock(cur->children[1], indent + 1, table);
-
-                        if (cur->childCount > 2 && cur->children[2] != NULL &&
-                            cur->children[2]->type != AST_NIL) {
-                            cur = cur->children[2];
-                        } else {
-                            cur = NULL;
-                        }
-                    }
-                    // cur is now a plain else block or NULL
-                    if (cur != NULL) {
-                        write_indent(indent);
-                        buf_append("} else {\n");
-                        generateBlock(cur, indent + 1, table);
-                    }
+                if (cur->childCount > 2 && cur->children[2] != NULL &&
+                    cur->children[2]->type != AST_NIL) {
+                    cur = cur->children[2];
                 } else {
-                    // Plain else block
-                    write_indent(indent);
-                    buf_append("} else {\n");
-                    generateBlock(tail, indent + 1, table);
+                    cur = NULL;
                 }
+            }
+            // cur is now a plain else block or NULL
+            if (cur != NULL) {
+                write_indent(indent);
+                buf_append("} else {\n");
+                SymbolTable* elseScope = getNextChildScope(table);
+                generateBlock(cur, indent + 1, elseScope ? elseScope : table);
             }
         } else {
             // Plain else block
             write_indent(indent);
             buf_append("} else {\n");
-            generateBlock(elseNode, indent + 1, table);
+            SymbolTable* elseScope = getNextChildScope(table);
+            generateBlock(elseNode, indent + 1, elseScope ? elseScope : table);
         }
     }
 
@@ -417,19 +397,23 @@ static void generateIf(ASTNode* node, int indent, SymbolTable* table) {
 // generateLoop — while / repeat-until
 // ============================================================
 static void generateLoop(ASTNode* node, int indent, SymbolTable* table) {
+    // Each loop body got its own child scope during semantic analysis.
+    SymbolTable* loopScope = getNextChildScope(table);
+    SymbolTable* inner     = loopScope ? loopScope : table;
+
     if (node->type == AST_WHILE) {
         write_indent(indent);
         buf_append("while (");
         generateExpression(node->children[0], table);
         buf_append(") {\n");
-        generateBlock(node->children[1], indent + 1, table);
+        generateBlock(node->children[1], indent + 1, inner);
         write_indent(indent);
         buf_append("}\n");
     } else {
         // REPEAT / UNTIL → do { ... } while (!(condition));
         write_indent(indent);
         buf_append("do {\n");
-        generateBlock(node->children[0], indent + 1, table);
+        generateBlock(node->children[0], indent + 1, inner);
         write_indent(indent);
         buf_append("} while (!(");
         generateExpression(node->children[1], table);
@@ -447,7 +431,11 @@ static void generateFor(ASTNode* node, int indent, SymbolTable* table) {
     ASTNode* stepNode  = node->children[3];
     ASTNode* bodyNode  = node->children[4];
 
-    SymbolRecord* rec   = lookupSymbol(table, varNode->token.value);
+    // Advance into the for-loop's child scope (holds the iterator variable).
+    SymbolTable* forScope = getNextChildScope(table);
+    SymbolTable* inner    = forScope ? forScope : table;
+
+    SymbolRecord* rec   = lookupSymbol(inner, varNode->token.value);
     const char*   cType = (rec && rec->type != TYPE_UNKNOWN) ? cTypeName(rec->type) : "int";
 
     write_indent(indent);
@@ -467,9 +455,8 @@ static void generateFor(ASTNode* node, int indent, SymbolTable* table) {
     generateExpression(stepNode, table);
     buf_append(") {\n");
 
-    generateBlock(bodyNode, indent + 1, table);
+    generateBlock(bodyNode, indent + 1, inner);
 
-    write_indent(indent);
     buf_append("}\n");
 }
 
