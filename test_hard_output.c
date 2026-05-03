@@ -11,9 +11,7 @@ static char* concat_strings(const char* a, const char* b) {
     return result;
 }
 
-static char* man;
 int steps;
-static void* rot;
 
 int is_prime_helper(int n, int divisor) {
     if ((n <= 1)) {
@@ -22,7 +20,7 @@ int is_prime_helper(int n, int divisor) {
     if ((divisor == 1)) {
         return 1;
     }
-    void* rem = (n % divisor);
+    int rem = (n % divisor);
     if ((rem == 0)) {
         return 0;
     }
@@ -48,15 +46,15 @@ int collatz_steps(int n) {
 }
 
 int complex_calculation(int limit) {
-    void* sum = 0;
-    void* i = 1;
+    int sum = 0;
+    int i = 1;
     while ((i <= limit)) {
         void* current_val = i;
         void* add_to_sum = 0;
         if ((is_prime(current_val) == 1)) {
             void* current_val = (current_val * 10);
             add_to_sum = current_val;
-        } else if (((current_val > 10) and (collatz_steps(current_val) > 15))) {
+        } else if (((current_val > 10) && (collatz_steps(current_val) > 15))) {
             add_to_sum = (current_val * 2);
         } else {
             add_to_sum = current_val;
@@ -68,14 +66,11 @@ int complex_calculation(int limit) {
 }
 
 int main() {
-    void* target = 20;
-    void* result = complex_calculation(target);
-    return result;
-}
-
-int main() {
-    static void* rot = NULL;
-    static char* man = concat_strings(hello,  world);
+    void* rot = NULL;
+    char* man = concat_strings("hello", " world");
     return main();
+    int target = 20;
+    int result = complex_calculation(target);
+    return result;
     return 0;
 }

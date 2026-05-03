@@ -71,5 +71,6 @@ SymbolType inferType(ASTNode* node, SymbolTable* table);
 SymbolTable* analyzeSemantic(ASTNode* root);
 void printSymbolTable(SymbolTable* table, const char* scopeName);
 void printFinalSymbolTables(SymbolTable* globalScope);
+SymbolTable* getFuncScope(const char* funcName);
 
 #endif // SEMANTIC_H

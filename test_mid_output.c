@@ -11,8 +11,6 @@ static char* concat_strings(const char* a, const char* b) {
     return result;
 }
 
-static int i;
-static int sum;
 
 int factorial(int n) {
     if ((n <= 1)) {
@@ -23,8 +21,8 @@ int factorial(int n) {
 }
 
 int main() {
-    static int sum = 0;
-    static int i = 1;
+    int sum = 0;
+    int i = 1;
     while ((i <= 5)) {
         sum = (sum + factorial(i));
         i = (i + 1);

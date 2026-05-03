@@ -11,18 +11,13 @@ static char* concat_strings(const char* a, const char* b) {
     return result;
 }
 
-static int result;
-static int a;
-static int b;
-static int c;
-static int final_value;
 
 int main() {
-    static int a = 10;
-    static int b = 20;
-    static int c = 5;
-    static int result = ((a + b) * c);
-    static int final_value = (result / 2);
+    int a = 10;
+    int b = 20;
+    int c = 5;
+    int result = ((a + b) * c);
+    int final_value = (result / 2);
     return final_value;
     return 0;
 }
