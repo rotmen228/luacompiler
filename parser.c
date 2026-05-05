@@ -6,22 +6,6 @@
 #include "ast.h"
 #include "error_handler.h"
 
-typedef struct {
-    TokenList* list;
-    int current;     // האינדקס של האסימון הנוכחי שאנחנו קוראים
-} Parser;
-
-ASTNode* parseStatement(Parser* p);
-ASTNode* parseExpression(Parser* p);
-ASTNode* parseIf(Parser* p);
-ASTNode* parseWhile(Parser* p);
-ASTNode* parseRepeat(Parser* p);
-ASTNode* parseFor(Parser* p);
-ASTNode* parseFunctionDef(Parser* p);
-ASTNode* parseReturn(Parser* p);
-ASTNode* parseLocal(Parser* p);
-ASTNode* parseAssignOrCall(Parser* p);
-ASTNode* parseBlock(Parser* p);
 // ==========================================
 // חלק 1: ניהול זיכרון ומבנה העץ (AST)
 // ==========================================

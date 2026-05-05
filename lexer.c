@@ -31,7 +31,6 @@ static void addToken(TokenList* list, TokenType type, const char* value, int lin
 
 // פונקציה לבדיקת מילות מפתח
 static TokenType identifyKeywordOrId(const char* word) {
-    // ריצה על מילון מילות המפתח ושליפה
     for (int i = 0; i < KEYWORD_DICT_SIZE; i++) {
         if (strcmp(word, keyword_dict[i].text) == 0) {
             return keyword_dict[i].type; // מצאנו מילת מפתח!

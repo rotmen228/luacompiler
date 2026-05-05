@@ -3,45 +3,56 @@
 
 #include "lexerH.h" // אנחנו צריכים את מבנה האסימון (Token) שהגדרנו קודם
 
-// סוגי הצמתים בעץ (מבוסס על עמוד 96 בספר שלך, בתוספת תיקונים הנדסיים)
 typedef enum {
-    AST_PROGRAM,        // שורש העץ (כל התוכנית)
-    AST_BLOCK,          // בלוק של קוד (למשל בתוך if או while)
+    AST_PROGRAM,
+    AST_BLOCK,
     AST_ASSIGNMENT,
     AST_LOCAL_ASSIGN,
-    AST_IF,             // תנאי
+    AST_IF,
     AST_WHILE,
     AST_REPEAT,
     AST_FOR,
-    AST_FUNCTION_DECL,  // הגדרת פונקציה
-    AST_FUNCTION_CALL,  // קריאה לפונקציה
-    AST_RETURN,         // החזרת ערך
+    AST_FUNCTION_DECL,
+    AST_FUNCTION_CALL,
+    AST_RETURN,
     
-    AST_BINOP,          // פעולה בינארית (+, -, *, /, ==, <)
-    AST_UNOP,           // פעולה אונארית (למשל השלילה not)
+    AST_BINOP,
+    AST_UNOP,
     
-    AST_IDENTIFIER,     // שם משתנה
-    AST_NUMBER,         // מספר
-    AST_STRING,         // מחרוזת
-    AST_NIL             // ערך ריק (תוקן מ-AST NIL)
+    AST_IDENTIFIER,
+    AST_NUMBER,
+    AST_STRING,
+    AST_NIL
 } ASTNodeType;
 
-// מבנה צומת בעץ
 typedef struct ASTNode {
     ASTNodeType type;
-    Token token;                 // האסימון המקורי שיצר את הצומת (לשמירת הערך ומספר השורה)
-    
-    // ניהול היררכיה: מערך דינמי של ילדים (כדי לתמוך בפונקציות עם המון פרמטרים או בלוקים ארוכים)
+    Token token;
     struct ASTNode** children;   
     int childCount;
     int childCapacity;
 } ASTNode;
 
-// חתימות לפונקציות ניהול הזיכרון של העץ
+typedef struct {
+    TokenList* list;
+    int current;
+} Parser;
+
+ASTNode* parseStatement(Parser* p);
+ASTNode* parseExpression(Parser* p);
+ASTNode* parseIf(Parser* p);
+ASTNode* parseWhile(Parser* p);
+ASTNode* parseRepeat(Parser* p);
+ASTNode* parseFor(Parser* p);
+ASTNode* parseFunctionDef(Parser* p);
+ASTNode* parseReturn(Parser* p);
+ASTNode* parseLocal(Parser* p);
+ASTNode* parseAssignOrCall(Parser* p);
+ASTNode* parseBlock(Parser* p);
 ASTNode* createNode(ASTNodeType type, Token token);
 void addChild(ASTNode* parent, ASTNode* child);
 void freeAST(ASTNode* root);
 void printAST(ASTNode* node, int depth);
 ASTNode* runParser(TokenList* tokens);
 
-#endif // AST_H
+#endif
