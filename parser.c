@@ -6,11 +6,6 @@
 #include "ast.h"
 #include "error_handler.h"
 
-// ==========================================
-// חלק 1: ניהול זיכרון ומבנה העץ (AST)
-// ==========================================
-
-// פונקציה ליצירת צומת חדש בעץ
 ASTNode* createNode(ASTNodeType type, Token token) {
     ASTNode* node = (ASTNode*)malloc(sizeof(ASTNode));
     if (!node) {
@@ -20,16 +15,13 @@ ASTNode* createNode(ASTNodeType type, Token token) {
     node->type = type;
     node->token = token;
     node->childCount = 0;
-    node->childCapacity = 2; // מתחילים עם מקום ל-2 ילדים
+    node->childCapacity = 2;
     node->children = (ASTNode**)malloc(node->childCapacity * sizeof(ASTNode*));
     return node;
 }
 
-// פונקציה להוספת "ילד" לצומת "אבא" (למשל הוספת פקודה לתוך לולאת While)
 void addChild(ASTNode* parent, ASTNode* child) {
     if (!parent || !child) return;
-    
-    // אם המערך מלא, נכפיל את הגודל שלו (ניהול זיכרון דינמי כמו שלמדנו)
     if (parent->childCount >= parent->childCapacity) {
         parent->childCapacity *= 2;
         parent->children = (ASTNode**)realloc(parent->children, parent->childCapacity * sizeof(ASTNode*));
@@ -37,7 +29,6 @@ void addChild(ASTNode* parent, ASTNode* child) {
     parent->children[parent->childCount++] = child;
 }
 
-// פונקציה רקורסיבית לשחרור כל העץ מהזיכרון בסיום הקימפול
 void freeAST(ASTNode* root) {
     if (!root) return;
     for (int i = 0; i < root->childCount; i++) {
@@ -47,28 +38,17 @@ void freeAST(ASTNode* root) {
     free(root);
 }
 
-// ==========================================
-// חלק 2: מנגנון הניווט - Recursive Descent
-// ==========================================
-
-
-
-// פונקציית עזר: "הצצה" על האסימון הנוכחי בלי להתקדם
 static Token peek(Parser* p) {
     if (p->current >= p->list->count) {
-        return p->list->tokens[p->list->count - 1]; // מחזיר EOF
+        return p->list->tokens[p->list->count - 1]; // reutrn EOF
     }
     return p->list->tokens[p->current];
 }
-
-// פונקציית עזר: קריאת האסימון הנוכחי והתקדמות לאסימון הבא
 static Token consume(Parser* p) {
     Token t = peek(p);
     p->current++;
     return t;
 }
-
-// פונקציית עזר: בדיקה האם האסימון הבא הוא מסוג מסוים. אם כן - בולע אותו.
 static bool match(Parser* p, TokenType expectedType) {
     if (peek(p).type == expectedType) {
         consume(p);
@@ -77,26 +57,18 @@ static bool match(Parser* p, TokenType expectedType) {
     return false;
 }
 
-// פונקציה שזורקת שגיאת תחביר במקרה שהקוד ב-Lua לא תקין
+//error in this state compremises the rest of the program, exit
 static void parseError(Parser* p, const char* message) {
     Token t = peek(p);
-    // אוספים את השגיאה האחרונה שגרמה לקריסה
     reportError(PHASE_SYNTAX, t.line, "%s (got '%s')", message, t.value ? t.value : "EOF");
-    
-    // מדפיסים את כל השגיאות שנאספו עד כה לפני שאנחנו יוצאים מהתוכנית!
     printAllErrors();
     exit(1);
 }
 
 
-
-// ==========================================
-// הפונקציה הראשית של הפארסר (שורש העץ)
-// ==========================================
 ASTNode* runParser(TokenList* tokens) {
     Parser p = {tokens, 0};
     
-    // יוצרים את צומת השורש של התוכנית
     Token dummyToken = {TOKEN_EOF, NULL, 0};
     ASTNode* programNode = createNode(AST_PROGRAM, dummyToken);
     

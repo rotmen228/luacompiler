@@ -1,7 +1,6 @@
 #ifndef AST_H
 #define AST_H
-
-#include "lexerH.h" // אנחנו צריכים את מבנה האסימון (Token) שהגדרנו קודם
+#include "lexerH.h"
 
 typedef enum {
     AST_PROGRAM,
@@ -15,10 +14,8 @@ typedef enum {
     AST_FUNCTION_DECL,
     AST_FUNCTION_CALL,
     AST_RETURN,
-    
     AST_BINOP,
     AST_UNOP,
-    
     AST_IDENTIFIER,
     AST_NUMBER,
     AST_STRING,
