@@ -81,6 +81,38 @@ static const char* printfFmt(SymbolType type) {
 }
 
 // ============================================================
+// Type-detection helpers used by generateExpression
+// ============================================================
+
+static int isNumericNode(ASTNode* n, SymbolTable* table) {
+    if (!n) return 0;
+    if (n->type == AST_NUMBER) return 1;
+    if (n->type == AST_IDENTIFIER) {
+        SymbolRecord* r = lookupSymbol(table, n->token.value);
+        return (r && (r->type == TYPE_INT || r->type == TYPE_DOUBLE));
+    }
+    return 0;
+}
+
+// Returns 1 if the node definitely yields a C char* (string).
+static int isStringNode(ASTNode* n, SymbolTable* table) {
+    if (!n) return 0;
+    if (n->type == AST_STRING) return 1;
+    if (n->type == AST_BINOP && n->token.type == TOKEN_OP_CONCAT) return 1;
+    if (n->type == AST_IDENTIFIER) {
+        SymbolRecord* r = lookupSymbol(table, n->token.value);
+        return (r && (r->type == TYPE_STRING || r->type == TYPE_UNKNOWN));
+    }
+    if (n->type == AST_FUNCTION_CALL) {
+        SymbolRecord* r = lookupSymbol(table, n->token.value);
+        return (r && r->type == TYPE_FUNCTION &&
+                (r->data.func_data.return_type == TYPE_STRING ||
+                 r->data.func_data.return_type == TYPE_UNKNOWN));
+    }
+    return 0;
+}
+
+// ============================================================
 // generateExpression
 // ============================================================
 static void generateExpression(ASTNode* node, SymbolTable* table) {
@@ -114,26 +146,45 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
             ASTNode* right = node->children[1];
 
             // Lua concat (..) → concat_strings(left, right)
+            // Numeric operands are wrapped with num_to_str() for coercion.
             if (node->token.type == TOKEN_OP_CONCAT) {
+                int leftIsNum  = isNumericNode(left,  table);
+                int rightIsNum = isNumericNode(right, table);
                 buf_append("concat_strings(");
-                generateExpression(left,  table);
+                if (leftIsNum)  { buf_append("num_to_str("); generateExpression(left,  table); buf_append(")"); }
+                else              generateExpression(left,  table);
                 buf_append(", ");
-                generateExpression(right, table);
+                if (rightIsNum) { buf_append("num_to_str("); generateExpression(right, table); buf_append(")"); }
+                else              generateExpression(right, table);
                 buf_append(")");
                 break;
             }
 
-            // Lua ~= → !=
-            if (node->token.type == TOKEN_OP_NEQ) {
-                buf_append("(");
-                generateExpression(left, table);
-                buf_append(" != ");
-                generateExpression(right, table);
-                buf_append(")");
+            // Lua == / ~= on strings → str_eq() to avoid pointer comparison.
+            // NULL comparisons (against nil) keep the plain == / != form.
+            if (node->token.type == TOKEN_OP_EQ || node->token.type == TOKEN_OP_NEQ) {
+                int needStrEq = (isStringNode(left, table) || isStringNode(right, table))
+                                && left->type  != AST_NIL
+                                && right->type != AST_NIL;
+                if (needStrEq) {
+                    if (node->token.type == TOKEN_OP_NEQ) buf_append("(!");
+                    buf_append("str_eq(");
+                    generateExpression(left,  table);
+                    buf_append(", ");
+                    generateExpression(right, table);
+                    buf_append(")");
+                    if (node->token.type == TOKEN_OP_NEQ) buf_append(")");
+                } else {
+                    buf_append("(");
+                    generateExpression(left, table);
+                    buf_append(node->token.type == TOKEN_OP_NEQ ? " != " : " == ");
+                    generateExpression(right, table);
+                    buf_append(")");
+                }
                 break;
             }
 
-            // FIX #1: Lua `and` → C `&&`
+            // Lua `and` → C `&&`
             if (node->token.type == TOKEN_KW_AND) {
                 buf_append("(");
                 generateExpression(left, table);
@@ -143,7 +194,7 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
                 break;
             }
 
-            // FIX #1: Lua `or` → C `||`
+            // Lua `or` → C `||`
             if (node->token.type == TOKEN_KW_OR) {
                 buf_append("(");
                 generateExpression(left, table);
@@ -634,10 +685,26 @@ void generateCode(ASTNode* root, SymbolTable* globalTable, const char* outputFil
 
     buf_append("// Lua string concatenation helper\n");
     buf_append("static char* concat_strings(const char* a, const char* b) {\n");
+    buf_append("    if (!a) a = \"nil\"; if (!b) b = \"nil\";\n");
     buf_append("    char* result = (char*)malloc(strlen(a) + strlen(b) + 1);\n");
     buf_append("    strcpy(result, a);\n");
     buf_append("    strcat(result, b);\n");
     buf_append("    return result;\n");
+    buf_append("}\n\n");
+
+    buf_append("// Lua number-to-string coercion helper (for .. with numbers)\n");
+    buf_append("static char* num_to_str(double v) {\n");
+    buf_append("    char* buf = (char*)malloc(64);\n");
+    buf_append("    if (v == (long long)v) snprintf(buf, 64, \"%lld\", (long long)v);\n");
+    buf_append("    else snprintf(buf, 64, \"%g\", v);\n");
+    buf_append("    return buf;\n");
+    buf_append("}\n\n");
+
+    buf_append("// Lua string equality helper (strcmp wrapper)\n");
+    buf_append("static int str_eq(const char* a, const char* b) {\n");
+    buf_append("    if (!a && !b) return 1;\n");
+    buf_append("    if (!a || !b) return 0;\n");
+    buf_append("    return strcmp(a, b) == 0;\n");
     buf_append("}\n\n");
 
     generateGlobalDeclarations(globalTable);

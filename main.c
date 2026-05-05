@@ -121,7 +121,7 @@ static void printAllScopesRecursive(SymbolTable* table, const char* scopeName, S
 // main
 // ============================================================
 int main(void) {
-    const char* files[] = {"test_simple.lua", "test_mid.lua", "test_hard.lua"};
+    const char* files[] = {"test_simple.lua", "test_mid.lua", "test_hard.lua", "test_hardS.lua"};
     int numFiles = (int)(sizeof(files) / sizeof(files[0]));
 
     for (int i = 0; i < numFiles; i++) {
