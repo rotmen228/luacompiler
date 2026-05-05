@@ -4,74 +4,10 @@
 #include <ctype.h>
 #include "lexerH.h"
 
-// מצבי האוטומט הסופי (מתוך המודל שלך)
-typedef enum {
-    STATE_START,
-    STATE_IN_ID,
-    STATE_NUMBER,
-    STATE_OPERATOR,
-    STATE_STRING,
-    STATE_ERROR
-} LexerState;
 
-// מבנה המייצג כניסה במילון (מחרוזת -> סוג אסימון)
-typedef struct {
-    const char* text;
-    TokenType type;
-} TokenDict;
-
-// מילון מילות המפתח (Keywords)
-static const TokenDict keyword_dict[] = {
-    {"and",      TOKEN_KW_AND},
-    {"do",       TOKEN_KW_DO},
-    {"else",     TOKEN_KW_ELSE},
-    {"elseif",   TOKEN_KW_ELSEIF},
-    {"end",      TOKEN_KW_END},
-    {"false",    TOKEN_KW_FALSE},
-    {"for",      TOKEN_KW_FOR},
-    {"function", TOKEN_KW_FUNCTION},
-    {"if",       TOKEN_KW_IF},
-    {"local",    TOKEN_KW_LOCAL},
-    {"nil",      TOKEN_KW_NIL},
-    {"not",      TOKEN_KW_NOT},
-    {"or",       TOKEN_KW_OR},
-    {"repeat",   TOKEN_KW_REPEAT},
-    {"return",   TOKEN_KW_RETURN},
-    {"then",     TOKEN_KW_THEN},
-    {"true",     TOKEN_KW_TRUE},
-    {"until",    TOKEN_KW_UNTIL},
-    {"while",    TOKEN_KW_WHILE}
-};
 
 // חישוב אוטומטי של גודל מילון מילות המפתח
 #define KEYWORD_DICT_SIZE (sizeof(keyword_dict) / sizeof(keyword_dict[0]))
-
-// מילון האופרטורים והסימנים (Operators & Punctuation)
-static const TokenDict operator_dict[] = {
-    {"==", TOKEN_OP_EQ},
-    {"~=", TOKEN_OP_NEQ},
-    {"<=", TOKEN_OP_LTE},
-    {">=", TOKEN_OP_GTE},
-    {"..", TOKEN_OP_CONCAT},
-    {"+",  TOKEN_OP_PLUS},
-    {"-",  TOKEN_OP_MINUS},
-    {"*",  TOKEN_OP_MUL},
-    {"/",  TOKEN_OP_DIV},
-    {"%",  TOKEN_OP_MOD},
-    {"<",  TOKEN_OP_LT},
-    {">",  TOKEN_OP_GT},
-    {"=",  TOKEN_OP_ASSIGN},
-    {"(",  TOKEN_PUNC_LPAREN},
-    {")",  TOKEN_PUNC_RPAREN},
-    {"{",  TOKEN_PUNC_LBRACE},   // <-- הוספנו
-    {"}",  TOKEN_PUNC_RBRACE},   // <-- הוספנו
-    {"[",  TOKEN_PUNC_LBRACKET}, // <-- הוספנו
-    {"]",  TOKEN_PUNC_RBRACKET}, // <-- הוספנו
-    {";",  TOKEN_PUNC_SEMI},     // <-- הוספנו ליתר ביטחון
-    {":",  TOKEN_PUNC_COLON},     // <-- הוספנו ליתר ביטחון
-    {",",  TOKEN_PUNC_COMMA}
-};
-
 // חישוב אוטומטי של גודל מילון האופרטורים
 #define OPERATOR_DICT_SIZE (sizeof(operator_dict) / sizeof(operator_dict[0]))
 
