@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "semantic.h"
+#include "error_handler.h"
+
 
 static SymbolRecord* currentFunctionScope = NULL;
 
@@ -217,8 +219,7 @@ SymbolType inferType(ASTNode* node, SymbolTable* table) {
                 strcmp(node->token.value, "false") == 0) return TYPE_BOOL;
             SymbolRecord* record = lookupSymbol(table, node->token.value);
             if (record) return record->type;
-            printf("Semantic Error at line %d: Use of undeclared variable '%s'\n",
-                   node->token.line, node->token.value);
+            reportError(PHASE_SEMANTIC, node->token.line, "Use of undeclared variable '%s'", node->token.value);
             return TYPE_UNKNOWN;
         }
 
@@ -282,7 +283,7 @@ static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolTy
         op == TOKEN_OP_LTE || op == TOKEN_OP_GTE) {
         if (left != TYPE_UNKNOWN && right != TYPE_UNKNOWN) {
             if ((left == TYPE_STRING) != (right == TYPE_STRING))
-                printf("Semantic Error at line %d: Cannot compare string with non-string\n", line);
+                reportError(PHASE_SEMANTIC, line, "Cannot compare string with non-string");
         }
         return TYPE_BOOL;
     }
@@ -291,7 +292,7 @@ static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolTy
 
     if (op == TOKEN_OP_CONCAT) {
         if (left != TYPE_STRING || right != TYPE_STRING) {
-            printf("Semantic Error at line %d: Concatenation (..) requires both operands to be strings\n", line);
+            reportError(PHASE_SEMANTIC, line, "Concatenation (..) requires both operands to be strings");
             return TYPE_UNKNOWN;
         }
         return TYPE_STRING;
@@ -300,7 +301,7 @@ static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolTy
     bool leftValid  = (left  == TYPE_INT || left  == TYPE_DOUBLE || left  == TYPE_UNKNOWN);
     bool rightValid = (right == TYPE_INT || right == TYPE_DOUBLE || right == TYPE_UNKNOWN);
     if (!leftValid || !rightValid) {
-        printf("Semantic Error at line %d: Cannot perform math operation on non-numeric types\n", line);
+        reportError(PHASE_SEMANTIC, line, "Cannot perform math operation on non-numeric types");
         return TYPE_UNKNOWN;
     }
     if (left == TYPE_DOUBLE || right == TYPE_DOUBLE) return TYPE_DOUBLE;
@@ -324,8 +325,7 @@ static void analyzeSemanticAssign(ASTNode* node, SymbolTable* table) {
             existing->type = inferred;
             existing->data.var_data.is_initialized = true;
         } else if (existing->type != inferred && inferred != TYPE_UNKNOWN) {
-            printf("Semantic Error at line %d: Type mismatch for variable '%s'\n",
-                   node->token.line, varName);
+            reportError(PHASE_SEMANTIC, node->token.line, "Type mismatch for variable '%s'", varName);
         }
     } else {
         ScopeType scope;
@@ -367,7 +367,7 @@ static void analyzeSemanticIf(ASTNode* node, SymbolTable* table) {
 
     SymbolType condType = inferType(condNode, table);
     if (condType != TYPE_BOOL && condType != TYPE_INT && condType != TYPE_UNKNOWN)
-        printf("Semantic Error at line %d: if condition must be boolean or numeric\n", node->token.line);
+        reportError(PHASE_SEMANTIC, node->token.line, "if condition must be boolean or numeric");
 
     SymbolTable* ifScope = createSymbolTable(table);
     analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, ifScope);
@@ -397,8 +397,7 @@ static void analyzeSemanticLoop(ASTNode* node, SymbolTable* table) {
 
     SymbolType condType = inferType(condNode, table);
     if (condType != TYPE_BOOL && condType != TYPE_INT && condType != TYPE_UNKNOWN)
-        printf("Semantic Error at line %d: Loop condition must be boolean or numeric\n", node->token.line);
-
+        reportError(PHASE_SEMANTIC, node->token.line, "Loop condition must be boolean or numeric");
     SymbolTable* loopScope = createSymbolTable(table);
     analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, loopScope);
 }
@@ -419,7 +418,7 @@ static void analyzeSemanticFor(ASTNode* node, SymbolTable* table) {
     bool stepOk  = (stepType  == TYPE_INT || stepType  == TYPE_DOUBLE || stepType  == TYPE_UNKNOWN);
 
     if (!startOk || !limitOk || !stepOk)
-        printf("Semantic Error at line %d: for loop bounds must be numeric\n", node->token.line);
+        reportError(PHASE_SEMANTIC, node->token.line, "for loop bounds must be numeric");
 
     SymbolTable* forScope = createSymbolTable(table);
     SymbolType iterType = (startType == TYPE_DOUBLE || limitType == TYPE_DOUBLE)
@@ -481,8 +480,7 @@ static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
             if (currentFunctionScope->data.func_data.return_type == TYPE_UNKNOWN)
                 currentFunctionScope->data.func_data.return_type = TYPE_VOID;
             else if (currentFunctionScope->data.func_data.return_type != TYPE_VOID)
-                printf("Semantic Error at line %d: Function '%s' returns both void and non-void values\n",
-                       node->token.line, currentFunctionScope->name);
+                reportError(PHASE_SEMANTIC, node->token.line, "Function '%s' returns both void and non-void values", currentFunctionScope->name);
         }
         return;
     }
@@ -497,8 +495,7 @@ static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
         } else if (cur == TYPE_DOUBLE && returnType == TYPE_INT) {
             // already wider — no change needed
         } else if (cur != returnType && returnType != TYPE_UNKNOWN) {
-            printf("Semantic Error at line %d: Inconsistent return types in function '%s'\n",
-                   node->token.line, currentFunctionScope->name);
+            reportError(PHASE_SEMANTIC, node->token.line, "Inconsistent return types in function '%s'", currentFunctionScope->name);
         }
     }
 }
@@ -518,13 +515,11 @@ static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
     SymbolRecord* funcRecord = lookupSymbol(table, funcName);
 
     if (funcRecord == NULL) {
-        printf("Semantic Error at line %d: Call to undefined function '%s'\n",
-               node->token.line, funcName);
+        reportError(PHASE_SEMANTIC, node->token.line, "Call to undefined function '%s'", funcName);
         return;
     }
     if (funcRecord->type != TYPE_FUNCTION) {
-        printf("Semantic Error at line %d: '%s' is not a function\n",
-               node->token.line, funcName);
+        reportError(PHASE_SEMANTIC, node->token.line, "'%s' is not a function", funcName);
         return;
     }
 
@@ -532,8 +527,7 @@ static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
     int givenArgs      = node->childCount;
 
     if (givenArgs != expectedParams) {
-        printf("Semantic Error at line %d: Function '%s' expects %d arguments but got %d\n",
-               node->token.line, funcName, expectedParams, givenArgs);
+        reportError(PHASE_SEMANTIC, node->token.line, "Function '%s' expects %d arguments but got %d", funcName, expectedParams, givenArgs);
         return;
     }
 
@@ -553,8 +547,7 @@ static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
                 }
             }
         } else if (argType != expectedType && argType != TYPE_UNKNOWN) {
-            printf("Semantic Error at line %d: Argument %d to function '%s' has wrong type\n",
-                   node->token.line, i + 1, funcName);
+            reportError(PHASE_SEMANTIC, node->token.line, "Argument %d to function '%s' has wrong type", i + 1, funcName);
         }
     }
 }

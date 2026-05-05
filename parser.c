@@ -4,6 +4,7 @@
 #include <string.h>
 #include "lexerH.h"
 #include "ast.h"
+#include "error_handler.h"
 
 typedef struct {
     TokenList* list;
@@ -95,7 +96,11 @@ static bool match(Parser* p, TokenType expectedType) {
 // פונקציה שזורקת שגיאת תחביר במקרה שהקוד ב-Lua לא תקין
 static void parseError(Parser* p, const char* message) {
     Token t = peek(p);
-    printf("Syntax Error at line %d: %s (got '%s')\n", t.line, message, t.value ? t.value : "EOF");
+    // אוספים את השגיאה האחרונה שגרמה לקריסה
+    reportError(PHASE_SYNTAX, t.line, "%s (got '%s')", message, t.value ? t.value : "EOF");
+    
+    // מדפיסים את כל השגיאות שנאספו עד כה לפני שאנחנו יוצאים מהתוכנית!
+    printAllErrors();
     exit(1);
 }
 

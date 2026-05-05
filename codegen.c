@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "codegen.h"
+#include "error_handler.h"
 
 // ============================================================
 // Output buffer — grows dynamically, holds the whole C file
@@ -744,7 +745,7 @@ void generateCode(ASTNode* root, SymbolTable* globalTable, const char* outputFil
 
     FILE* outFile = fopen(outputFilename, "w");
     if (!outFile) {
-        printf("Code Generation Error: Cannot open '%s' for writing\n", outputFilename);
+        reportError(PHASE_CODEGEN, 0, "Cannot open '%s' for writing", outputFilename);
         free(g_buf.data);
         return;
     }

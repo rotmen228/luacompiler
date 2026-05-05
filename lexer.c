@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "lexerH.h"
+#include "error_handler.h"
 
 // חישוב אוטומטי של גודל מילון מילות המפתח
 #define KEYWORD_DICT_SIZE (sizeof(keyword_dict) / sizeof(keyword_dict[0]))
@@ -168,7 +169,7 @@ TokenList runLexer(const char* sourceCode) {
             if (type != TOKEN_ERROR) {
                 addToken(&list, type, buffer, currentLine);
             } else {
-                printf("Lexical Error at line %d: Unknown character '%s'\n", currentLine, buffer);
+                reportError(PHASE_LEXICAL, currentLine, "Unknown character '%s'", buffer);
             }
         }
     }
