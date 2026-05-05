@@ -56,16 +56,65 @@ char* readFile(const char* filename) {
 
 // ============================================================
 // Helper: build an output filename like "test_simple_output.c"
-// from "test_simple.lua"
 // ============================================================
 static void makeOutputName(const char* inputName, char* outBuf, int outBufSize) {
-    // Copy everything up to the last '.' (or the whole name)
     const char* dot = strrchr(inputName, '.');
     int baseLen = dot ? (int)(dot - inputName) : (int)strlen(inputName);
     if (baseLen >= outBufSize - 10) baseLen = outBufSize - 10;
     strncpy(outBuf, inputName, baseLen);
     outBuf[baseLen] = '\0';
     strncat(outBuf, "_output.c", outBufSize - baseLen - 1);
+}
+
+// ============================================================
+// NEW: Scope Tree Traversal (Recursive Printing)
+// ============================================================
+
+// פונקציית עזר לבדיקה אם בלוק מסוים הוא בעצם פונקציה מוכרת
+static const char* identifyScopeName(SymbolTable* target, SymbolTable* globalScope) {
+    if (!globalScope) return NULL;
+    
+    // סורקים את הטבלה הגלובלית כדי למצוא פונקציות
+    for (int i = 0; i < HASH_TABLE_SIZE; i++) {
+        HashEntry* entry = globalScope->buckets[i];
+        while (entry) {
+            if (entry->record->type == TYPE_FUNCTION) {
+                // שולפים את הטבלה של הפונקציה ובודקים אם היא הטבלה שאנחנו מסתכלים עליה עכשיו
+                SymbolTable* funcTable = getFuncScope(entry->record->name);
+                if (funcTable == target) {
+                    return entry->record->name; // מצאנו!
+                }
+            }
+            entry = entry->next;
+        }
+    }
+    return NULL;
+}
+
+// הפונקציה הרקורסיבית שעוברת על כל עץ הטבלאות
+static void printAllScopesRecursive(SymbolTable* table, const char* scopeName, SymbolTable* globalScope) {
+    if (!table) return;
+    
+    // 1. מדפיסים את הטבלה הנוכחית
+    printSymbolTable(table, scopeName);
+    
+    // 2. עוברים על כל הילדים (תנאי IF, לולאות, או פונקציות פנימיות) ומדפיסים גם אותם
+    for (int i = 0; i < table->childCount; i++) {
+        char childName[256];
+        SymbolTable* childTable = table->children[i];
+        
+        // ננסה להבין אם הילד הזה הוא בעצם פונקציה
+        const char* funcName = identifyScopeName(childTable, globalScope);
+        
+        if (funcName) {
+            snprintf(childName, sizeof(childName), "Function: %s", funcName);
+        } else {
+            // אם זה לא פונקציה, זה כנראה בלוק אנונימי (כמו if או while)
+            snprintf(childName, sizeof(childName), "%s -> Sub-Block %d", scopeName, i + 1);
+        }
+        
+        printAllScopesRecursive(childTable, childName, globalScope);
+    }
 }
 
 // ============================================================
@@ -118,9 +167,10 @@ int main(void) {
         printf("\n[3/4] Running Semantic Analysis...\n");
         SymbolTable* globalScope = analyzeSemantic(root);
 
-        // Print all symbol tables (global + every function scope)
+        // הדפסת כל טבלאות הסמלים באמצעות העץ הרקורסיבי שלנו!
         if (globalScope) {
-            printFinalSymbolTables(globalScope);
+            printf("\n=== FULL SCOPE TREE (INCLUDING IFs & LOOPs) ===\n");
+            printAllScopesRecursive(globalScope, "Global Scope", globalScope);
         } else {
             printf("      WARNING: Semantic analysis returned NULL table.\n");
         }

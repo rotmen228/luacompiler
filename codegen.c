@@ -220,9 +220,9 @@ static void generateGlobalDeclarations(SymbolTable* globalTable) {
 }
 
 // ============================================================
-// generateFunctions
-// FIX #4: Skip a function named "main" — the Lua `function main()`
-// body is emitted as the C main() body, not as a separate function.
+// generateFunctions — emit all top-level function definitions.
+// Note: the Lua source must not define a function named "main"
+// as that name is reserved for the generated C entry point.
 // ============================================================
 static void generateFunctions(ASTNode* root, SymbolTable* globalTable) {
     if (!root) return;
@@ -231,12 +231,7 @@ static void generateFunctions(ASTNode* root, SymbolTable* globalTable) {
         ASTNode* node = root->children[i];
         if (!node || node->type != AST_FUNCTION_DECL) continue;
 
-        // FIX #4: "main" is handled by the C main() wrapper — don't double-emit it.
-        if (strcmp(node->token.value, "main") == 0) continue;
-
-        // FIX #3: retrieve the function's own local scope from the semantic
-        // analyser so that locals inside the function body get the right type.
-        SymbolTable* funcScope = getFuncScope(node->token.value);
+        SymbolTable* funcScope  = getFuncScope(node->token.value);
         SymbolTable* tableToUse = funcScope ? funcScope : globalTable;
 
         generateFunction(node, 0, tableToUse);
@@ -303,32 +298,75 @@ static void generateAssign(ASTNode* node, int indent, SymbolTable* table) {
 
 // ============================================================
 // generateLocalAssign — local x = expr
-// FIX #5: Inside main() FILE_LOCAL vars are emitted as plain locals
-// (no `static`).  Inside a function body BLOCK_LOCAL vars are plain.
+//
+// Shadow-safety fix: In Lua, `local x = x * 10` means "read the
+// *outer* x, then create a new x".  In C, `int x = x * 10` is UB
+// because the RHS sees the new (uninitialised) x.
+// Solution: when the variable name already exists in an *outer*
+// scope (parent or higher), evaluate the RHS into a uniquely-named
+// temp first, then declare the shadow from the temp.
+//
+//   int __tmp_shadow_current_val = (current_val * 10);
+//   int current_val = __tmp_shadow_current_val;
+//
+// When there is no shadowing the old single-line form is used.
 // ============================================================
-static void generateLocalAssign(ASTNode* node, int indent, SymbolTable* table) {
-    write_indent(indent);
 
+// Counter for unique temp names (reset per generateCode call via buf_init path)
+static int g_shadow_tmp_counter = 0;
+
+static void generateLocalAssign(ASTNode* node, int indent, SymbolTable* table) {
     ASTNode*    varNode = node->children[0];
     ASTNode*    valNode = node->children[1];
     const char* name    = varNode->token.value;
 
-    // FIX #3: look up the variable in the *current* scope table (which is the
-    // function-local table when we're inside a function body) so that we get
-    // the properly inferred type rather than falling back to void*.
+    // Look up type in the current (innermost) scope table.
     SymbolRecord* rec   = lookupSymbol(table, name);
     SymbolType    sType = rec ? rec->type : TYPE_UNKNOWN;
     const char*   cType = cTypeName(sType);
 
-    // FIX #5: Never emit `static` inside a function body.  Top-level locals
-    // were formerly emitted as `static int x` inside main() — they are now
-    // just plain `int x`.
-    buf_append(cType);
-    buf_append(" ");
-    buf_append(name);
-    buf_append(" = ");
-    generateExpression(valNode, table);
-    buf_append(";\n");
+    // Detect shadowing: does this name exist in a *parent* scope?
+    // (The current table was just entered, so any record in table->parent_table
+    //  or higher is the outer binding that the RHS should see.)
+    int isShadow = 0;
+    if (table->parent_table != NULL) {
+        SymbolRecord* outer = lookupSymbol(table->parent_table, name);
+        if (outer != NULL) {
+            isShadow = 1;
+        }
+    }
+
+    if (isShadow) {
+        // Step 1: evaluate RHS into a temp (still sees the outer `name`)
+        char tmpName[128];
+        snprintf(tmpName, sizeof(tmpName), "__tmp_shadow_%s_%d", name, g_shadow_tmp_counter++);
+
+        write_indent(indent);
+        buf_append(cType);
+        buf_append(" ");
+        buf_append(tmpName);
+        buf_append(" = ");
+        generateExpression(valNode, table);
+        buf_append(";\n");
+
+        // Step 2: declare the shadow from the temp
+        write_indent(indent);
+        buf_append(cType);
+        buf_append(" ");
+        buf_append(name);
+        buf_append(" = ");
+        buf_append(tmpName);
+        buf_append(";\n");
+    } else {
+        // No shadowing — simple single-line form
+        write_indent(indent);
+        buf_append(cType);
+        buf_append(" ");
+        buf_append(name);
+        buf_append(" = ");
+        generateExpression(valNode, table);
+        buf_append(";\n");
+    }
 }
 
 // ============================================================
@@ -571,41 +609,29 @@ static void generateReturn(ASTNode* node, int indent, SymbolTable* table) {
 
 // ============================================================
 // generateCode — main entry point
+// Top-level Lua statements become the C main() body.
+// A top-level `return <call>()` (the Lua entry-point idiom,
+// e.g. `return mainLua()`) is emitted as a plain call so the
+// program runs it and then falls through to `return 0`.
 // ============================================================
 
-// Helper: does the AST have a top-level function named "main"?
-static int hasLuaMainFunc(ASTNode* root) {
-    if (!root) return 0;
-    for (int i = 0; i < root->childCount; i++) {
-        ASTNode* c = root->children[i];
-        if (c && c->type == AST_FUNCTION_DECL &&
-            strcmp(c->token.value, "main") == 0) return 1;
-    }
-    return 0;
-}
-
-// Helper: find the Lua `function main()` node.
-static ASTNode* findLuaMainNode(ASTNode* root) {
-    if (!root) return NULL;
-    for (int i = 0; i < root->childCount; i++) {
-        ASTNode* c = root->children[i];
-        if (c && c->type == AST_FUNCTION_DECL &&
-            strcmp(c->token.value, "main") == 0) return c;
-    }
-    return NULL;
+static int isEntryPointReturn(ASTNode* node) {
+    return node->type == AST_RETURN &&
+           node->childCount > 0 &&
+           node->children[0] != NULL &&
+           node->children[0]->type == AST_FUNCTION_CALL;
 }
 
 void generateCode(ASTNode* root, SymbolTable* globalTable, const char* outputFilename) {
     buf_init();
+    g_shadow_tmp_counter = 0;  // reset per compilation unit
 
-    // Standard headers
     buf_append("#include <stdio.h>\n");
     buf_append("#include <stdlib.h>\n");
     buf_append("#include <string.h>\n");
     buf_append("#include <stdbool.h>\n");
     buf_append("\n");
 
-    // Lua string concatenation helper
     buf_append("// Lua string concatenation helper\n");
     buf_append("static char* concat_strings(const char* a, const char* b) {\n");
     buf_append("    char* result = (char*)malloc(strlen(a) + strlen(b) + 1);\n");
@@ -614,69 +640,34 @@ void generateCode(ASTNode* root, SymbolTable* globalTable, const char* outputFil
     buf_append("    return result;\n");
     buf_append("}\n\n");
 
-    // Global variable forward declarations (truly global vars only — FIX #5)
     generateGlobalDeclarations(globalTable);
     buf_append("\n");
 
-    // All non-main function definitions (FIX #4: main skipped here)
     generateFunctions(root, globalTable);
 
-    // ============================================================
-    // C main()
-    // FIX #4: If the Lua file has a `function main()`, its body
-    // becomes the C main body directly (no wrapper call, no duplicate).
-    // Otherwise, the top-level Lua statements become the C main body.
-    // ============================================================
     buf_append("int main() {\n");
 
-    if (hasLuaMainFunc(root)) {
-        // Emit the body of Lua's `function main()` as the C main body.
-        ASTNode*     luaMain   = findLuaMainNode(root);
-        ASTNode*     bodyNode  = luaMain->children[luaMain->childCount - 1];
-        SymbolTable* mainScope = getFuncScope("main");
-        SymbolTable* tableToUse = mainScope ? mainScope : globalTable;
-
-        // Also emit top-level statements that are NOT function declarations
-        // and NOT `function main` (e.g. top-level `local rot = nil`).
+    if (root) {
         for (int i = 0; i < root->childCount; i++) {
             ASTNode* child = root->children[i];
-            if (!child) continue;
-            if (child->type == AST_FUNCTION_DECL) continue; // all funcs already emitted above
+            if (!child || child->type == AST_FUNCTION_DECL) continue;
+
+            if (isEntryPointReturn(child)) {
+                // `return foo()` → plain call, then fall through to return 0
+                generateCall(child->children[0], 1, globalTable);
+                continue;
+            }
 
             switch (child->type) {
-                case AST_ASSIGNMENT:   generateAssign(child, 1, globalTable);      break;
-                case AST_LOCAL_ASSIGN: generateLocalAssign(child, 1, globalTable); break;
-                case AST_IF:           generateIf(child, 1, globalTable);          break;
+                case AST_ASSIGNMENT:    generateAssign(child, 1, globalTable);      break;
+                case AST_LOCAL_ASSIGN:  generateLocalAssign(child, 1, globalTable); break;
+                case AST_IF:            generateIf(child, 1, globalTable);          break;
                 case AST_WHILE:
-                case AST_REPEAT:       generateLoop(child, 1, globalTable);        break;
-                case AST_FOR:          generateFor(child, 1, globalTable);         break;
-                case AST_FUNCTION_CALL:generateCall(child, 1, globalTable);        break;
-                case AST_RETURN:       generateReturn(child, 1, globalTable);      break;
+                case AST_REPEAT:        generateLoop(child, 1, globalTable);        break;
+                case AST_FOR:           generateFor(child, 1, globalTable);         break;
+                case AST_FUNCTION_CALL: generateCall(child, 1, globalTable);        break;
+                case AST_RETURN:        generateReturn(child, 1, globalTable);      break;
                 default: break;
-            }
-        }
-
-        // Now emit the body of Lua `function main()` directly
-        generateBlock(bodyNode, 1, tableToUse);
-
-    } else {
-        // No Lua `function main()` — top-level statements become C main body.
-        if (root) {
-            for (int i = 0; i < root->childCount; i++) {
-                ASTNode* child = root->children[i];
-                if (!child || child->type == AST_FUNCTION_DECL) continue;
-
-                switch (child->type) {
-                    case AST_ASSIGNMENT:   generateAssign(child, 1, globalTable);      break;
-                    case AST_LOCAL_ASSIGN: generateLocalAssign(child, 1, globalTable); break;
-                    case AST_IF:           generateIf(child, 1, globalTable);          break;
-                    case AST_WHILE:
-                    case AST_REPEAT:       generateLoop(child, 1, globalTable);        break;
-                    case AST_FOR:          generateFor(child, 1, globalTable);         break;
-                    case AST_FUNCTION_CALL:generateCall(child, 1, globalTable);        break;
-                    case AST_RETURN:       generateReturn(child, 1, globalTable);      break;
-                    default: break;
-                }
             }
         }
     }
@@ -684,7 +675,6 @@ void generateCode(ASTNode* root, SymbolTable* globalTable, const char* outputFil
     buf_append("    return 0;\n");
     buf_append("}\n");
 
-    // Write output file
     FILE* outFile = fopen(outputFilename, "w");
     if (!outFile) {
         printf("Code Generation Error: Cannot open '%s' for writing\n", outputFilename);

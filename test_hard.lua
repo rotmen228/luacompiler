@@ -66,10 +66,12 @@ function complex_calculation(limit)
     return sum
 end
 
-function main()
+function mainLua()
     local target = 20
     local result = complex_calculation(target)
+    print(target)
+    print(result)
     return result
 end
 
-return main()
+return mainLua()

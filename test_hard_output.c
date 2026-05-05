@@ -52,7 +52,8 @@ int complex_calculation(int limit) {
         int current_val = i;
         int add_to_sum = 0;
         if ((is_prime(current_val) == 1)) {
-            int current_val = (current_val * 10);
+            int __tmp_shadow_current_val_0 = (current_val * 10);
+            int current_val = __tmp_shadow_current_val_0;
             add_to_sum = current_val;
         } else if (((current_val > 10) && (collatz_steps(current_val) > 15))) {
             add_to_sum = (current_val * 2);
@@ -65,12 +66,17 @@ int complex_calculation(int limit) {
     return sum;
 }
 
+int mainLua() {
+    int target = 20;
+    int result = complex_calculation(target);
+    printf("%d\n", target);
+    printf("%d\n", result);
+    return result;
+}
+
 int main() {
     void* rot = NULL;
     char* man = concat_strings("hello", " world");
-    return main();
-    int target = 20;
-    int result = complex_calculation(target);
-    return result;
+    mainLua();
     return 0;
 }
