@@ -4,8 +4,6 @@
 #include <ctype.h>
 #include "lexerH.h"
 
-
-
 // חישוב אוטומטי של גודל מילון מילות המפתח
 #define KEYWORD_DICT_SIZE (sizeof(keyword_dict) / sizeof(keyword_dict[0]))
 // חישוב אוטומטי של גודל מילון האופרטורים
@@ -45,14 +43,11 @@ static TokenType identifyKeywordOrId(const char* word) {
 
 // פונקציה לבדיקת אופרטורים
 static TokenType identifyOperator(const char* op) {
-    // ריצה על מילון האופרטורים
     for (int i = 0; i < OPERATOR_DICT_SIZE; i++) {
         if (strcmp(op, operator_dict[i].text) == 0) {
-            return operator_dict[i].type; // מצאנו אופרטור מוכר!
+            return operator_dict[i].type;
         }
     }
-    
-    // אם הגענו לפה, יש לנו בעיה לקסיקלית
     return TOKEN_ERROR; 
 }
 
@@ -65,14 +60,13 @@ TokenList runLexer(const char* sourceCode) {
     const char* ptr = sourceCode;
     
     while (*ptr != '\0') {
-        // שלב 2.1 (עמוד 57): דילוג על רווחים וירידות שורה
         if (isspace(*ptr)) {
             if (*ptr == '\n') currentLine++;
             ptr++;
             continue;
         }
         
-        // דילוג על הערות (מתחילות ב -- בלואה)
+        //דילוג על הערות)
         if (*ptr == '-' && *(ptr+1) == '-') {
             while (*ptr != '\n' && *ptr != '\0') ptr++;
             continue;
@@ -116,12 +110,11 @@ TokenList runLexer(const char* sourceCode) {
                         buffer[bufIdx++] = c;
                         ptr++;
                     } else {
-                        state = STATE_ERROR; // התיקון: עוצרים אך לא מקדמים את ה-PTR!
+                        state = STATE_ERROR;
                     }
                     break;
                     
                 case STATE_NUMBER:
-                    // תומך במספרים עשרוניים
                     if (isdigit(c) || c == '.') {
                         buffer[bufIdx++] = c;
                         ptr++;
@@ -131,7 +124,6 @@ TokenList runLexer(const char* sourceCode) {
                     break;
                     
                 case STATE_OPERATOR:
-                    // טיפול באופרטורים של שני תווים כמו ==, ~=, <=, >=, ..
                     if ((buffer[0] == '=' && c == '=') || 
                         (buffer[0] == '~' && c == '=') ||
                         (buffer[0] == '<' && c == '=') ||
@@ -140,17 +132,16 @@ TokenList runLexer(const char* sourceCode) {
                         buffer[bufIdx++] = c;
                         ptr++;
                     }
-                    state = STATE_ERROR; // הגענו לסוף האופרטור, חותכים!
+                    state = STATE_ERROR;
                     break;
                     
                 case STATE_STRING:
-                    // ממשיכים לקרוא עד המרכאות הסוגרות
                     if (c != '"' && c != '\'') {
                         buffer[bufIdx++] = c;
                         ptr++;
                     } else {
-                        ptr++; // מדלגים על המרכאות הסוגרות
-                        state = STATE_ERROR; // מסיימים את הקריאה
+                        ptr++;
+                        state = STATE_ERROR;
                     }
                     break;
                     
@@ -159,23 +150,19 @@ TokenList runLexer(const char* sourceCode) {
             }
         }
         
-        // יצאנו ממצב קריאה - שלב ה-Tokenize (עמוד 58)
+        // Tokenize
         buffer[bufIdx] = '\0';
         
-        // כאן זיהינו אילו תווים נחתכו, ועכשיו מאפיינים אותם לפי הקבוצה
-if (startPos[0] == '"' || startPos[0] == '\'') {
+        if (startPos[0] == '"' || startPos[0] == '\'') {
             addToken(&list, TOKEN_STRING, buffer, currentLine);
         }
-        // 2. רק אז בודקים אם זו אות (שם משתנה או מילת מפתח)
         else if (isalpha(buffer[0]) || buffer[0] == '_') {
             TokenType type = identifyKeywordOrId(buffer);
             addToken(&list, type, buffer, currentLine);
         } 
-        // 3. ואז מספרים
         else if (isdigit(buffer[0])) {
             addToken(&list, TOKEN_NUMBER, buffer, currentLine);
         }
-        // 4. וכל השאר (אופרטורים)
         else {
             TokenType type = identifyOperator(buffer);
             if (type != TOKEN_ERROR) {
@@ -185,8 +172,6 @@ if (startPos[0] == '"' || startPos[0] == '\'') {
             }
         }
     }
-    
-    // סימן סוף קובץ
     addToken(&list, TOKEN_EOF, "EOF", currentLine);
     return list;
 }

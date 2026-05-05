@@ -257,6 +257,10 @@ SymbolType inferType(ASTNode* node, SymbolTable* table) {
 
         case AST_FUNCTION_CALL: {
             analyzeSemanticCall(node, table);
+            if (strcmp(node->token.value, "print") == 0) {
+                return TYPE_VOID;
+            }
+            
             SymbolRecord* record = lookupSymbol(table, node->token.value);
             if (record && record->type == TYPE_FUNCTION)
                 return record->data.func_data.return_type;
@@ -501,6 +505,16 @@ static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
 
 static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
     const char*   funcName  = node->token.value;
+
+    if (strcmp(funcName, "print") == 0) {
+        // מנתחים את הארגומנטים כדי לוודא שאין שגיאות סמנטיות בתוכם, 
+        // אבל עוצרים פה כי print לא נמצאת בטבלת הסמלים.
+        for (int i = 0; i < node->childCount; i++) {
+            inferType(node->children[i], table);
+        }
+        return;
+    }
+
     SymbolRecord* funcRecord = lookupSymbol(table, funcName);
 
     if (funcRecord == NULL) {
