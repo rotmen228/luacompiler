@@ -10,8 +10,8 @@ static SymbolRecord* currentFunctionScope = NULL;
 
 // Array collecting every function-scope table so codegen can retrieve them in O(1)
 static SymbolTable* allScopes[100];
-static const char* allScopeNames[100];
-static const char* allFuncParamNames[100][20];
+static char allScopeNames[100][128];
+static char allFuncParamNames[100][20][64];
 static int scopeCount = 0;
 
 SymbolTable* getFuncScope(const char* funcName) {
@@ -445,12 +445,15 @@ static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
 
     // Save scope for codegen
     if (scopeCount < 100) {
-        allScopes[scopeCount] = funcScope;
-        allScopeNames[scopeCount] = funcName;
-        for (int i = 0; i < paramCount && i < 20; i++)
-            allFuncParamNames[scopeCount][i] = node->children[i]->token.value;
-        scopeCount++;
-    }
+            allScopes[scopeCount] = funcScope;
+            strncpy(allScopeNames[scopeCount], funcName, 127);
+            allScopeNames[scopeCount][127] = '\0';
+            for (int i = 0; i < paramCount && i < 20; i++) {
+                strncpy(allFuncParamNames[scopeCount][i], node->children[i]->token.value, 63);
+                allFuncParamNames[scopeCount][i][63] = '\0';
+            }
+            scopeCount++;
+        }
 }
 
 static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
@@ -551,6 +554,9 @@ static void analyzeSemanticBlock(ASTNode** nodes, int count, SymbolTable* table)
 SymbolTable* analyzeSemantic(ASTNode* root) {
     if (!root) return NULL;
     scopeCount = 0;
+    memset(allScopes, 0, sizeof(allScopes));
+    memset(allScopeNames, 0, sizeof(allScopeNames));
+    memset(allFuncParamNames, 0, sizeof(allFuncParamNames));
     SymbolTable* globalTable = createSymbolTable(NULL);
     printf("\n--- Starting Semantic Analysis ---\n");
     analyzeSemanticBlock(root->children, root->childCount, globalTable);
