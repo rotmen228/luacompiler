@@ -557,35 +557,21 @@ static void generateCall(ASTNode* node, int indent, SymbolTable* table) {
     write_indent(indent);
     const char* funcName = node->token.value;
 
-    //prinbt to printf
+    // print to printf
     if (strcmp(funcName, "print") == 0) {
         if (node->childCount == 0) {
             buf_append("printf(\"\\n\");\n");
             return;
         }
+        
         ASTNode* arg = node->children[0];
-        SymbolType argType = TYPE_UNKNOWN;
-        if (arg->type == AST_NUMBER) {
-            argType = strchr(arg->token.value, '.') ? TYPE_DOUBLE : TYPE_INT;
-        } else if (arg->type == AST_STRING) {
-            argType = TYPE_STRING;
-        } else if (arg->type == AST_IDENTIFIER) {
-            if (strcmp(arg->token.value, "true")  == 0 ||
-                strcmp(arg->token.value, "false") == 0) {
-                argType = TYPE_BOOL;
-            } else {
-                SymbolRecord* rec = lookupSymbol(table, arg->token.value);
-                if (rec) argType = rec->type;
-            }
-        } else if (arg->type == AST_FUNCTION_CALL) {
-            SymbolRecord* rec = lookupSymbol(table, arg->token.value);
-            if (rec && rec->type == TYPE_FUNCTION)
-                argType = rec->data.func_data.return_type;
-        }
+        SymbolType argType = inferType(arg, table); 
+        
         if (argType == TYPE_UNKNOWN) {
             buf_append("printf(\"nil\\n\");\n");
             return;
         }
+        
         char fmt[64];
         snprintf(fmt, sizeof(fmt), "printf(\"%s\\n\", ", printfFmt(argType));
         buf_append(fmt);
@@ -594,7 +580,7 @@ static void generateCall(ASTNode* node, int indent, SymbolTable* table) {
         return;
     }
 
-    //regular call
+    // regular call
     buf_append(funcName);
     buf_append("(");
     for (int i = 0; i < node->childCount; i++) {

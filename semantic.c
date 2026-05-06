@@ -268,8 +268,11 @@ static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolTy
     if (op == TOKEN_KW_AND || op == TOKEN_KW_OR) return TYPE_BOOL;
 
     if (op == TOKEN_OP_CONCAT) {
-        if (left != TYPE_STRING || right != TYPE_STRING) {
-            reportError(PHASE_SEMANTIC, line, "Concatenation (..) requires both operands to be strings");
+        bool leftValid  = (left == TYPE_STRING || left == TYPE_INT || left == TYPE_DOUBLE || left == TYPE_UNKNOWN);
+        bool rightValid = (right == TYPE_STRING || right == TYPE_INT || right == TYPE_DOUBLE || right == TYPE_UNKNOWN);
+
+        if (!leftValid || !rightValid) {
+            reportError(PHASE_SEMANTIC, line, "Concatenation (..) requires operands to be strings or numbers");
             return TYPE_UNKNOWN;
         }
         return TYPE_STRING;
