@@ -5,7 +5,7 @@
 #include "ast.h"
 #include "semantic.h"
 #include "codegen.h"
-#include "error_handler.h" // <--- הוספנו את מנהל השגיאות!
+#include "error_handler.h"
 
 char* readFile(const char* filename) {
     FILE* file = fopen(filename, "rb");
@@ -24,100 +24,88 @@ char* readFile(const char* filename) {
     return buffer;
 }
 
-static void makeOutputName(const char* inputName, char* outBuf, int outBufSize) {
-    const char* dot = strrchr(inputName, '.');
-    int baseLen = dot ? (int)(dot - inputName) : (int)strlen(inputName);
-    if (baseLen >= outBufSize - 10) baseLen = outBufSize - 10;
-    strncpy(outBuf, inputName, baseLen);
-    outBuf[baseLen] = '\0';
-    strncat(outBuf, "_output.c", outBufSize - baseLen - 1);
-}
+int main(int argc, char* argv[]) {
+    // 1. חלץ את נתיב_קובץ_מקור ואת נתיב_קובץ_פלט מה-CLI
+    if (argc < 2) {
+        printf("Usage: luacompiler <input_file.lua> [-o <output_file.c>]\n");
+        return 1;
+    }
 
-static const char* identifyScopeName(SymbolTable* target, SymbolTable* globalScope) {
-    if (!globalScope) return NULL;
-    for (int i = 0; i < HASH_TABLE_SIZE; i++) {
-        HashEntry* entry = globalScope->buckets[i];
-        while (entry) {
-            if (entry->record->type == TYPE_FUNCTION) {
-                SymbolTable* funcTable = getFuncScope(entry->record->name);
-                if (funcTable == target) return entry->record->name;
-            }
-            entry = entry->next;
+    const char* source_file_path = argv[1];
+    const char* output_file_path = "output.c"; // ברירת מחדל
+
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            output_file_path = argv[i + 1];
+            break;
         }
     }
-    return NULL;
-}
 
-static void printAllScopesRecursive(SymbolTable* table, const char* scopeName, SymbolTable* globalScope) {
-    if (!table) return;
-    printSymbolTable(table, scopeName);
-    for (int i = 0; i < table->childCount; i++) {
-        char childName[256];
-        SymbolTable* childTable = table->children[i];
-        const char* funcName = identifyScopeName(childTable, globalScope);
-        
-        if (funcName) snprintf(childName, sizeof(childName), "Function: %s", funcName);
-        else snprintf(childName, sizeof(childName), "%s -> Sub-Block %d", scopeName, i + 1);
-        
-        printAllScopesRecursive(childTable, childName, globalScope);
+    initErrorHandler();
+
+    // 2. פתח את נתיב_קובץ_מקור, קרא את כל תוכנו וסגור אותו
+    char* source_code = readFile(source_file_path);
+    if (!source_code) {
+        return 1;
     }
-}
 
-int main(void) {
-    const char* files[] = {"test_simple.lua", "test_mid.lua", "test_hard.lua", "test_midS.lua"};
-    int numFiles = (int)(sizeof(files) / sizeof(files[0]));
+    // 3. קרא לפונקציה runLexer עם קוד_מקור
+    TokenList token_list = runLexer(source_code);
 
-    for (int i = 0; i < numFiles; i++) {
-        printf("\n*************************************************************\n");
-        printf("  PROCESSING: %s\n", files[i]);
-        printf("*************************************************************\n");
+    // 4. אם קיימת שגיאה במודל - הדפס
+    if (hasErrors()) {
+        printAllErrors();
+    }
 
-        char* source = readFile(files[i]);
-        if (!source) continue;
+    // 5. קרא לפונקציה runProgram (runParser אצלנו) עם רשימת_אסימונים
+    ASTNode* syntax_tree = runParser(&token_list);
 
-        // אתחול רשימת השגיאות עבור הקובץ הנוכחי
-        initErrorHandler();
+    // 6. אם קיימת שגיאה במודל - הדפס
+    if (hasErrors()) {
+        printAllErrors();
+    }
 
-        printf("\n[1/4] Running Lexer...\n");
-        TokenList list = runLexer(source);
+    // 7. קרא לפונקציה analyzeSemantic על עץ_תחביר
+    SymbolTable* global_symbol_table = NULL;
+    if (syntax_tree) { // הגנה קטנה למקרה שהעץ לא נוצר
+        global_symbol_table = analyzeSemantic(syntax_tree);
+    }
 
-        printf("\n[2/4] Building AST...\n");
-        ASTNode* root = runParser(&list);
+    // 8. אם קיימת שגיאה במודל - הדפס
+    if (hasErrors()) {
+        printAllErrors();
+    }
 
-        if (root) {
-            printf("\n[3/4] Running Semantic Analysis...\n");
-            SymbolTable* globalScope = analyzeSemantic(root);
+    // 9. קרא לפונקציה generateCode (המחרוזת נשמרת בבאפר_קוד_C)
+    char* c_code_buffer = NULL;
+    if (syntax_tree && global_symbol_table) {
+        c_code_buffer = generateCode(syntax_tree, global_symbol_table);
+    }
 
-            // בדיקה האם נאספו שגיאות במהלך הלקסר, הפארסר או הניתוח הסמנטי
-            if (hasErrors()) {
-                printAllErrors();
-            } else {
-                if (globalScope) {
-                    printf("\n=== FULL SCOPE TREE ===\n");
-                    printAllScopesRecursive(globalScope, "Global Scope", globalScope);
-                }
-
-                char outputName[256];
-                makeOutputName(files[i], outputName, sizeof(outputName));
-                printf("\n[4/4] Generating C code → %s\n", outputName);
-                generateCode(root, globalScope, outputName);
-            }
+    if (c_code_buffer) {
+        // 10. פתח קובץ חדש בדיסק בשם נתיב_קובץ_פלט
+        FILE* out_file = fopen(output_file_path, "w");
+        if (out_file) {
+            // 11. כתוב את התוכן של חוצץ_קוד_C לתוך הקובץ וסגור אותו
+            fputs(c_code_buffer, out_file);
+            fclose(out_file);
+            
+            // 12. הדפס הודעת הצלחה ב-View
+            printf("Compilation successful! Output saved to: %s\n", output_file_path);
         } else {
-            // אם העץ לא נוצר (שגיאת Syntax קריטית) נדפיס את השגיאות
-            printAllErrors();
+            printf("Error: Could not write to output file '%s'\n", output_file_path);
         }
-
-        // ניקוי זיכרון
-        freeAST(root);
-        freeTokenList(&list);
-        free(source);
-        freeErrorHandler();
         
-        printf("\n  Done with %s\n", files[i]);
+        // שחרור המחרוזת שנוצרה ב-codegen
+        free(c_code_buffer);
     }
 
-    printf("\n=============================================================\n");
-    printf("  All files processed.\n");
-    printf("=============================================================\n");
+    // 13. שחרר את כל הזיכרון שהוקצה דינמית
+    if (syntax_tree) freeAST(syntax_tree);
+    freeTokenList(&token_list);
+    if (source_code) free(source_code);
+    freeErrorHandler();
+    
+    // 14. החזר 0
     return 0;
 }

@@ -10,7 +10,7 @@ typedef struct {
     int   capacity;
 } OutputBuffer;
 
-void generateCode(ASTNode* root, SymbolTable* globalTable, const char* outputFilename);
+// השינוי: הפונקציה עכשיו מחזירה char* ולא מקבלת outputFilename
+char* generateCode(ASTNode* root, SymbolTable* globalTable);
 
 #endif
- 

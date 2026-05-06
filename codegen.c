@@ -627,7 +627,7 @@ static int isEntryPointReturn(ASTNode* node) {
            node->children[0]->type == AST_FUNCTION_CALL;
 }
 
-void generateCode(ASTNode* root, SymbolTable* globalTable, const char* outputFilename) {
+char* generateCode(ASTNode* root, SymbolTable* globalTable) {
     buf_init();
     g_shadow_tmp_counter = 0;
 
@@ -695,14 +695,10 @@ void generateCode(ASTNode* root, SymbolTable* globalTable, const char* outputFil
     buf_append("    return 0;\n");
     buf_append("}\n");
 
-    FILE* outFile = fopen(outputFilename, "w");
-    if (!outFile) {
-        reportError(PHASE_CODEGEN, 0, "Cannot open '%s' for writing", outputFilename);
-        free(g_buf.data);
-        return;
-    }
-    fputs(g_buf.data, outFile);
-    fclose(outFile);
-    printf("      Written to '%s' (%d bytes)\n", outputFilename, g_buf.length);
-    free(g_buf.data);
+    char* final_code = g_buf.data;
+    g_buf.data = NULL;
+    g_buf.length = 0;
+    g_buf.capacity = 0;
+
+    return final_code;
 }

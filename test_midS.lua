@@ -12,14 +12,13 @@ function mainLua()
     local result1 = get_valid_string(missing_data)
     local result2 = get_valid_string(actual_data)
     
-    -- Testing the outcomes
     if result1 == "DEFAULT_EMPTY" then
         if result2 == "REAL_DATA" then
-            return 1 -- Success
+            return 1
         end
     end
     
-    return 0 -- Failure
+    return 0
 end
 
 return mainLua()
