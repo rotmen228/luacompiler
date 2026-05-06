@@ -1,11 +1,9 @@
 #ifndef SEMANTIC_H
 #define SEMANTIC_H
-
 #include <stdbool.h>
 #include "ast.h"
 #include "lexerH.h"
 
-// סוגי ההיקפים (Scopes) - מגדיר איפה המשתנה חי
 typedef enum {
     SCOPE_FILE_LOCAL,
     SCOPE_GLOBAL,
@@ -13,7 +11,6 @@ typedef enum {
     SCOPE_BLOCK_LOCAL
 } ScopeType;
 
-// סוגי הטיפוסים שהמהדר מסיק
 typedef enum {
     TYPE_UNKNOWN = 0,
     TYPE_INT,
@@ -24,13 +21,11 @@ typedef enum {
     TYPE_FUNCTION
 } SymbolType;
 
-// מבנה לשמירת פרמטרים של פונקציות
 typedef struct {
     SymbolType* param_types;
     int param_count;
 } FunctionParams;
 
-// רשומה בודדת בטבלת הסמלים (מייצגת משתנה או פונקציה)
 typedef struct {
     char* name;
     SymbolType type;
@@ -46,7 +41,7 @@ typedef struct {
     } data;
 } SymbolRecord;
 
-// צומת ברשימה המקושרת של טבלת הגיבוב (לטיפול בהתנגשויות)
+//open hashing
 typedef struct HashEntry {
     SymbolRecord* record;
     struct HashEntry* next;
@@ -54,21 +49,18 @@ typedef struct HashEntry {
 
 #define HASH_TABLE_SIZE 256
 
-// טבלת הסמלים עצמה - היררכית! מצביעה לאבא שלה.
-// Children are stored in creation order (= block appearance order in the
-// source), so codegen can consume them in the same order to always get
-// the correct scope when entering a nested block.
+//symbol table, children are saved in order
 #define MAX_CHILD_SCOPES 64
 typedef struct SymbolTable {
     HashEntry* buckets[HASH_TABLE_SIZE];
     struct SymbolTable*  parent_table;
-    struct SymbolTable** children;      // dynamic array of child scopes
-    int                  childCount;    // how many children created so far
-    int                  childCapacity; // allocated capacity
-    int                  nextChild;     // codegen cursor: next child to consume
+    struct SymbolTable** children;
+    int                  childCount;
+    int                  childCapacity;
+    int                  nextChild;
 } SymbolTable;
 
-// --- חתימות לפונקציות הניהול ---
+
 SymbolTable* createSymbolTable(SymbolTable* parent);
 void insertSymbol(SymbolTable* table, SymbolRecord* record);
 SymbolRecord* lookupSymbol(SymbolTable* table, const char* name);
@@ -86,4 +78,4 @@ void printSymbolTable(SymbolTable* table, const char* scopeName);
 void printFinalSymbolTables(SymbolTable* globalScope);
 SymbolTable* getFuncScope(const char* funcName);
 
-#endif // SEMANTIC_H
+#endif
