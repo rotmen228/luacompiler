@@ -71,11 +71,20 @@ SymbolRecord* createVarRecord(const char* name, SymbolType type, ScopeType scope
 // once every time it enters a block that introduces a new scope.
 SymbolTable* getNextChildScope(SymbolTable* table);
 
-// --- חתימות לפונקציות האנליזה המרכזיות (נכתוב בהמשך) ---
 SymbolType inferType(ASTNode* node, SymbolTable* table);
 SymbolTable* analyzeSemantic(ASTNode* root);
 void printSymbolTable(SymbolTable* table, const char* scopeName);
 void printFinalSymbolTables(SymbolTable* globalScope);
 SymbolTable* getFuncScope(const char* funcName);
+static void analyzeSemanticBlock(ASTNode** nodes, int count, SymbolTable* table);
+static void analyzeSemanticAssign(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticLocal(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticIf(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticLoop(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticFor(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticCall(ASTNode* node, SymbolTable* table);
+static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table);
+static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolType right, int line);
 
 #endif
