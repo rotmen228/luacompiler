@@ -3,6 +3,9 @@ local b = 20
 local c = 5
 
 local result = (a + b) * c
-local final_value = result / 2
+local final_value = result / 2.0
 
 return final_value
+
+print(final_value)
+print(result)

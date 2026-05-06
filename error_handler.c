@@ -4,12 +4,6 @@
 #include <stdarg.h>
 #include "error_handler.h"
 
-// מבנה לשגיאה בודדת
-typedef struct {
-    ErrorPhase phase;
-    int line;
-    char message[512];
-} CompilerError;
 
 static CompilerError* errorList = NULL;
 static int errorCount = 0;
@@ -21,7 +15,6 @@ void initErrorHandler(void) {
     errorList = (CompilerError*)malloc(errorCapacity * sizeof(CompilerError));
 }
 
-// הפונקציה שאוספת את השגיאות למערך
 void reportError(ErrorPhase phase, int line, const char* format, ...) {
     if (errorCount >= errorCapacity) {
         errorCapacity *= 2;
@@ -31,7 +24,6 @@ void reportError(ErrorPhase phase, int line, const char* format, ...) {
     errorList[errorCount].phase = phase;
     errorList[errorCount].line = line;
 
-    // עיבוד המחרוזת עם המשתנים (כמו printf)
     va_list args;
     va_start(args, format);
     vsnprintf(errorList[errorCount].message, sizeof(errorList[errorCount].message), format, args);
@@ -44,7 +36,6 @@ bool hasErrors(void) {
     return errorCount > 0;
 }
 
-// הפונקציה שמדפיסה את הדו"ח הסופי
 void printAllErrors(void) {
     if (errorCount == 0) return;
 

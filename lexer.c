@@ -77,6 +77,7 @@ TokenList runLexer(const char* sourceCode) {
         LexerState state = STATE_START;
         char buffer[256] = {0};
         int bufIdx = 0;
+        bool hasDot = false;
         
         while (state != STATE_ERROR && *ptr != '\0') {
             char c = *ptr;
@@ -115,9 +116,21 @@ TokenList runLexer(const char* sourceCode) {
                     break;
                     
                 case STATE_NUMBER:
-                    if (isdigit(c) || c == '.') {
+                    if (isdigit(c)) {
                         buffer[bufIdx++] = c;
                         ptr++;
+                    } else if (c == '.') {
+                        if (*(ptr + 1) == '.') {
+                            state = STATE_ERROR;
+                        } 
+                        else if (hasDot) {
+                            state = STATE_ERROR; 
+                        } 
+                        else {
+                            hasDot = true;
+                            buffer[bufIdx++] = c;
+                            ptr++;
+                        }
                     } else {
                         state = STATE_ERROR;
                     }

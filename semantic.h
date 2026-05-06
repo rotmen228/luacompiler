@@ -65,10 +65,6 @@ SymbolTable* createSymbolTable(SymbolTable* parent);
 void insertSymbol(SymbolTable* table, SymbolRecord* record);
 SymbolRecord* lookupSymbol(SymbolTable* table, const char* name);
 SymbolRecord* createVarRecord(const char* name, SymbolType type, ScopeType scope, bool is_init);
-
-// Returns (and advances past) the next child scope of `table` in the
-// order they were created during semantic analysis.  Codegen calls this
-// once every time it enters a block that introduces a new scope.
 SymbolTable* getNextChildScope(SymbolTable* table);
 
 SymbolType inferType(ASTNode* node, SymbolTable* table);

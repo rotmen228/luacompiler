@@ -102,10 +102,10 @@ SymbolTable* createSymbolTable(SymbolTable* parent) {
     if (!table) { printf("Memory allocation failed for SymbolTable\n"); exit(1); }
     for (int i = 0; i < HASH_TABLE_SIZE; i++) table->buckets[i] = NULL;
     table->parent_table  = parent;
-    table->children      = NULL;
-    table->childCount    = 0;
+    table->children = NULL;
+    table->childCount = 0;
     table->childCapacity = 0;
-    table->nextChild     = 0;
+    table->nextChild = 0;
     if (parent != NULL) {
         if (parent->childCount >= parent->childCapacity) {
             int newCap = (parent->childCapacity == 0) ? 4 : parent->childCapacity * 2;
@@ -150,7 +150,7 @@ SymbolRecord* lookupSymbol(SymbolTable* table, const char* name) {
     SymbolTable* current = table;
     while (current != NULL) {
         unsigned int index = hash(name);
-        HashEntry* entry   = current->buckets[index];
+        HashEntry* entry = current->buckets[index];
         while (entry != NULL) {
             if (strcmp(entry->record->name, name) == 0) return entry->record;
             entry = entry->next;
@@ -160,8 +160,7 @@ SymbolRecord* lookupSymbol(SymbolTable* table, const char* name) {
     return NULL;
 }
 
-// Returns the next child scope of `table` in creation order, advancing
-// the cursor.  Codegen calls this once per block that creates a new scope.
+// Returns the next child scope of table in creation order, advancing the curser
 SymbolTable* getNextChildScope(SymbolTable* table) {
     if (!table || table->nextChild >= table->childCount) return NULL;
     return table->children[table->nextChild++];
@@ -185,7 +184,6 @@ SymbolType inferType(ASTNode* node, SymbolTable* table) {
     if (!node) return TYPE_UNKNOWN;
 
     switch (node->type) {
-
         case AST_NUMBER:
             return strchr(node->token.value, '.') ? TYPE_DOUBLE : TYPE_INT;
 
@@ -196,7 +194,7 @@ SymbolType inferType(ASTNode* node, SymbolTable* table) {
             return TYPE_UNKNOWN;
 
         case AST_IDENTIFIER: {
-            if (strcmp(node->token.value, "true")  == 0 ||
+            if (strcmp(node->token.value, "true") == 0 ||
                 strcmp(node->token.value, "false") == 0) return TYPE_BOOL;
             SymbolRecord* record = lookupSymbol(table, node->token.value);
             if (record) return record->type;
@@ -207,14 +205,12 @@ SymbolType inferType(ASTNode* node, SymbolTable* table) {
         case AST_BINOP: {
             SymbolType leftType  = inferType(node->children[0], table);
             SymbolType rightType = inferType(node->children[1], table);
-
-            // Type propagation: if one side is UNKNOWN identifier, guess from the other
             TokenType op = node->token.type;
             if (op == TOKEN_OP_PLUS || op == TOKEN_OP_MINUS || op == TOKEN_OP_MUL ||
-                op == TOKEN_OP_DIV  || op == TOKEN_OP_MOD   || op == TOKEN_OP_POW ||
-                op == TOKEN_OP_LT   || op == TOKEN_OP_GT    || op == TOKEN_OP_LTE ||
+                op == TOKEN_OP_DIV || op == TOKEN_OP_MOD || op == TOKEN_OP_POW ||
+                op == TOKEN_OP_LT || op == TOKEN_OP_GT || op == TOKEN_OP_LTE ||
                 op == TOKEN_OP_GTE) {
-
+                //type inference from other type in case its still not identified
                 if (leftType == TYPE_UNKNOWN && node->children[0]->type == AST_IDENTIFIER) {
                     SymbolRecord* rec = lookupSymbol(table, node->children[0]->token.value);
                     if (rec) {
@@ -294,11 +290,13 @@ static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolTy
 // ==========================================
 
 static void analyzeSemanticAssign(ASTNode* node, SymbolTable* table) {
-    ASTNode*    varNode = node->children[0];
-    ASTNode*    valNode = node->children[1];
+    //left
+    ASTNode* varNode = node->children[0];
+    //right
+    ASTNode* valNode = node->children[1];
     const char* varName = varNode->token.value;
 
-    SymbolType inferred  = inferType(valNode, table);
+    SymbolType inferred = inferType(valNode, table);
     SymbolRecord* existing = lookupSymbol(table, varName);
 
     if (existing != NULL) {
@@ -324,15 +322,15 @@ static void analyzeSemanticAssign(ASTNode* node, SymbolTable* table) {
 }
 
 static void analyzeSemanticLocal(ASTNode* node, SymbolTable* table) {
-    ASTNode*    varNode = node->children[0];
-    ASTNode*    valNode = node->children[1];
+    ASTNode* varNode = node->children[0];
+    ASTNode* valNode = node->children[1];
     const char* varName = varNode->token.value;
 
-    SymbolType inferred   = TYPE_UNKNOWN;
-    bool       initialized = false;
+    SymbolType inferred = TYPE_UNKNOWN;
+    bool initialized = false;
 
     if (valNode != NULL && valNode->type != AST_NIL) {
-        inferred    = inferType(valNode, table);
+        inferred = inferType(valNode, table);
         initialized = true;
     }
 
@@ -411,9 +409,9 @@ static void analyzeSemanticFor(ASTNode* node, SymbolTable* table) {
 }
 
 static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
-    const char* funcName  = node->token.value;
-    ASTNode*    bodyNode  = node->children[node->childCount - 1];
-    int         paramCount = node->childCount - 1;
+    const char* funcName = node->token.value;
+    ASTNode* bodyNode = node->children[node->childCount - 1];
+    int paramCount = node->childCount - 1;
 
     SymbolType* paramTypes = NULL;
     if (paramCount > 0) {
@@ -436,7 +434,7 @@ static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
     analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, funcScope);
     currentFunctionScope = prevFunc;
 
-    // Back-propagate inferred param types into the function record
+    //update inferred param types into the function rec
     if (paramCount > 0 && paramTypes != NULL) {
         for (int i = 0; i < paramCount; i++) {
             const char* paramName = node->children[i]->token.value;
@@ -445,9 +443,9 @@ static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
         }
     }
 
-    // Save scope for codegen and for call-site type propagation
+    // Save scope for codegen
     if (scopeCount < 100) {
-        allScopes[scopeCount]     = funcScope;
+        allScopes[scopeCount] = funcScope;
         allScopeNames[scopeCount] = funcName;
         for (int i = 0; i < paramCount && i < 20; i++)
             allFuncParamNames[scopeCount][i] = node->children[i]->token.value;
@@ -465,7 +463,6 @@ static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
         }
         return;
     }
-
     SymbolType returnType = inferType(node->children[0], table);
     if (currentFunctionScope != NULL) {
         SymbolType cur = currentFunctionScope->data.func_data.return_type;
@@ -482,11 +479,9 @@ static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
 }
 
 static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
-    const char*   funcName  = node->token.value;
+    const char* funcName = node->token.value;
 
     if (strcmp(funcName, "print") == 0) {
-        // מנתחים את הארגומנטים כדי לוודא שאין שגיאות סמנטיות בתוכם, 
-        // אבל עוצרים פה כי print לא נמצאת בטבלת הסמלים.
         for (int i = 0; i < node->childCount; i++) {
             inferType(node->children[i], table);
         }
@@ -495,6 +490,7 @@ static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
 
     SymbolRecord* funcRecord = lookupSymbol(table, funcName);
 
+    //logic checks
     if (funcRecord == NULL) {
         reportError(PHASE_SEMANTIC, node->token.line, "Call to undefined function '%s'", funcName);
         return;
@@ -503,26 +499,25 @@ static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
         reportError(PHASE_SEMANTIC, node->token.line, "'%s' is not a function", funcName);
         return;
     }
-
     int expectedParams = funcRecord->data.func_data.params.param_count;
-    int givenArgs      = node->childCount;
+    int givenArgs = node->childCount;
 
     if (givenArgs != expectedParams) {
         reportError(PHASE_SEMANTIC, node->token.line, "Function '%s' expects %d arguments but got %d", funcName, expectedParams, givenArgs);
         return;
     }
 
+    //compare given types with wanted, if not equal then infer the type from them
     for (int i = 0; i < givenArgs; i++) {
-        SymbolType argType      = inferType(node->children[i], table);
+        SymbolType argType = inferType(node->children[i], table);
         SymbolType expectedType = funcRecord->data.func_data.params.param_types[i];
 
         if (expectedType == TYPE_UNKNOWN) {
-            // Propagate the argument's type into the function's param record
             funcRecord->data.func_data.params.param_types[i] = argType;
             for (int j = 0; j < scopeCount; j++) {
                 if (strcmp(allScopeNames[j], funcName) == 0) {
-                    const char*   paramName = allFuncParamNames[j][i];
-                    SymbolRecord* paramRec  = lookupSymbol(allScopes[j], paramName);
+                    const char* paramName = allFuncParamNames[j][i];
+                    SymbolRecord* paramRec = lookupSymbol(allScopes[j], paramName);
                     if (paramRec) paramRec->type = argType;
                     break;
                 }
@@ -552,6 +547,7 @@ static void analyzeSemanticBlock(ASTNode** nodes, int count, SymbolTable* table)
     }
 }
 
+//debug
 SymbolTable* analyzeSemantic(ASTNode* root) {
     if (!root) return NULL;
     scopeCount = 0;

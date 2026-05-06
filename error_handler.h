@@ -11,11 +11,16 @@ typedef enum {
     PHASE_CODEGEN
 } ErrorPhase;
 
-// חתימות הפונקציות לניהול השגיאות
+typedef struct {
+    ErrorPhase phase;
+    int line;
+    char message[512];
+} CompilerError;
+
 void initErrorHandler(void);
 void reportError(ErrorPhase phase, int line, const char* format, ...);
 bool hasErrors(void);
 void printAllErrors(void);
 void freeErrorHandler(void);
 
-#endif // ERROR_HANDLER_H
+#endif

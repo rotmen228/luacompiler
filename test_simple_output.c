@@ -33,7 +33,9 @@ int main() {
     int b = 20;
     int c = 5;
     int result = ((a + b) * c);
-    int final_value = (result / 2);
+    double final_value = (result / 2.0);
     return final_value;
+    printf("%f\n", final_value);
+    printf("%d\n", result);
     return 0;
 }

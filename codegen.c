@@ -4,22 +4,13 @@
 #include "codegen.h"
 #include "error_handler.h"
 
-// ============================================================
-// Output buffer — grows dynamically, holds the whole C file
-// ============================================================
-typedef struct {
-    char* data;
-    int   length;
-    int   capacity;
-} OutputBuffer;
-
 static OutputBuffer g_buf;
 
 static void buf_init(void) {
     g_buf.capacity = 4096;
-    g_buf.length   = 0;
-    g_buf.data     = (char*)malloc(g_buf.capacity);
-    g_buf.data[0]  = '\0';
+    g_buf.length = 0;
+    g_buf.data = (char*)malloc(g_buf.capacity);
+    g_buf.data[0] = '\0';
 }
 
 static void buf_append(const char* str) {
@@ -32,9 +23,6 @@ static void buf_append(const char* str) {
     g_buf.length += addLen;
 }
 
-// ============================================================
-// Forward declarations
-// ============================================================
 static void generateBlock      (ASTNode* node,  int indent, SymbolTable* table);
 static void generateAssign     (ASTNode* node,  int indent, SymbolTable* table);
 static void generateLocalAssign(ASTNode* node,  int indent, SymbolTable* table);
@@ -65,9 +53,9 @@ static const char* cTypeName(SymbolType type) {
         case TYPE_INT:    return "int";
         case TYPE_DOUBLE: return "double";
         case TYPE_STRING: return "char*";
-        case TYPE_BOOL:   return "int";    // Lua booleans → C int (0/1)
+        case TYPE_BOOL:   return "int";//bool -> 0/1
         case TYPE_VOID:   return "void";
-        default:          return "void*";  // TYPE_UNKNOWN → safe fallback
+        default:          return "void*";
     }
 }
 
@@ -95,7 +83,7 @@ static int isNumericNode(ASTNode* n, SymbolTable* table) {
     return 0;
 }
 
-// Returns 1 if the node definitely yields a C char* (string).
+//returns 1 if the node definitely yields a C char*
 static int isStringNode(ASTNode* n, SymbolTable* table) {
     if (!n) return 0;
     if (n->type == AST_STRING) return 1;
@@ -125,7 +113,6 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
             buf_append("NULL");
             break;
 
-        // FIX #2: numbers are emitted raw; strings are wrapped in quotes.
         case AST_NUMBER:
             buf_append(node->token.value);
             break;
@@ -137,7 +124,7 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
             break;
 
         case AST_IDENTIFIER:
-            if (strcmp(node->token.value, "true")  == 0) { buf_append("1"); break; }
+            if (strcmp(node->token.value, "true") == 0) { buf_append("1"); break; }
             if (strcmp(node->token.value, "false") == 0) { buf_append("0"); break; }
             buf_append(node->token.value);
             break;
@@ -146,23 +133,21 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
             ASTNode* left  = node->children[0];
             ASTNode* right = node->children[1];
 
-            // Lua concat (..) → concat_strings(left, right)
-            // Numeric operands are wrapped with num_to_str() for coercion.
             if (node->token.type == TOKEN_OP_CONCAT) {
-                int leftIsNum  = isNumericNode(left,  table);
+                int leftIsNum = isNumericNode(left,  table);
                 int rightIsNum = isNumericNode(right, table);
                 buf_append("concat_strings(");
                 if (leftIsNum)  { buf_append("num_to_str("); generateExpression(left,  table); buf_append(")"); }
-                else              generateExpression(left,  table);
+                else generateExpression(left,  table);
                 buf_append(", ");
                 if (rightIsNum) { buf_append("num_to_str("); generateExpression(right, table); buf_append(")"); }
-                else              generateExpression(right, table);
+                else generateExpression(right, table);
                 buf_append(")");
                 break;
             }
 
-            // Lua == / ~= on strings → str_eq() to avoid pointer comparison.
-            // NULL comparisons (against nil) keep the plain == / != form.
+            // Lua == / ~= on strings is str_eq()
+            // NULL comparisons (against nil) keep the plain == / != 
             if (node->token.type == TOKEN_OP_EQ || node->token.type == TOKEN_OP_NEQ) {
                 int needStrEq = (isStringNode(left, table) || isStringNode(right, table))
                                 && left->type  != AST_NIL
@@ -185,7 +170,7 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
                 break;
             }
 
-            // Lua `and` → C `&&`
+            // Lua amd is && in C
             if (node->token.type == TOKEN_KW_AND) {
                 buf_append("(");
                 generateExpression(left, table);
@@ -195,7 +180,7 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
                 break;
             }
 
-            // Lua `or` → C `||`
+            // Lua or is || in C
             if (node->token.type == TOKEN_KW_OR) {
                 buf_append("(");
                 generateExpression(left, table);
@@ -205,7 +190,7 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
                 break;
             }
 
-            // All other operators: emit (left op right)
+            // All other operators
             buf_append("(");
             generateExpression(left, table);
             buf_append(" ");
@@ -235,10 +220,7 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
 
 // ============================================================
 // generateGlobalDeclarations
-// FIX #5: Only emit truly global / global-implicit variables.
-// SCOPE_FILE_LOCAL vars are locals declared at the top level of the
-// Lua file; they will be declared with their proper type inside
-// main() by generateLocalAssign, so we skip them here.
+// emit global / global-implicit variables.
 // ============================================================
 static void generateGlobalDeclarations(SymbolTable* globalTable) {
     if (!globalTable) return;
@@ -248,14 +230,13 @@ static void generateGlobalDeclarations(SymbolTable* globalTable) {
         while (entry != NULL) {
             SymbolRecord* rec = entry->record;
 
-            // Skip functions — they get their own full definition
+            //skip functions - they get their own full definition
             if (rec->type == TYPE_FUNCTION) {
                 entry = entry->next;
                 continue;
             }
 
-            // FIX #5: Skip file-local (top-level `local`) vars — they will be
-            // declared inside main() without the redundant global forward-decl.
+            //skip file-local vars - they will be
             if (rec->scope == SCOPE_FILE_LOCAL) {
                 entry = entry->next;
                 continue;
@@ -265,7 +246,6 @@ static void generateGlobalDeclarations(SymbolTable* globalTable) {
             char line[256];
             snprintf(line, sizeof(line), "%s %s;\n", cTypeName(rec->type), rec->name);
             buf_append(line);
-
             entry = entry->next;
         }
     }
