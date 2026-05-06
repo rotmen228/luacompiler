@@ -252,9 +252,7 @@ static void generateGlobalDeclarations(SymbolTable* globalTable) {
 }
 
 // ============================================================
-// generateFunctions — emit all top-level function definitions.
-// Note: the Lua source must not define a function named "main"
-// as that name is reserved for the generated C entry point.
+// generateFunctions - emit all top level function definitions
 // ============================================================
 static void generateFunctions(ASTNode* root, SymbolTable* globalTable) {
     if (!root) return;
@@ -299,7 +297,6 @@ static void generateBlock(ASTNode* node, int indent, SymbolTable* table) {
                 generateFor(child, indent, table);
                 break;
             case AST_FUNCTION_DECL:
-                // Nested function definition — generate inline.
                 generateFunction(child, indent, table);
                 buf_append("\n");
                 break;
@@ -316,7 +313,7 @@ static void generateBlock(ASTNode* node, int indent, SymbolTable* table) {
 }
 
 // ============================================================
-// generateAssign — x = expr  (variable was already declared globally)
+// generateAssign - x = expr (variable was already declared globally)
 // ============================================================
 static void generateAssign(ASTNode* node, int indent, SymbolTable* table) {
     write_indent(indent);
@@ -330,36 +327,22 @@ static void generateAssign(ASTNode* node, int indent, SymbolTable* table) {
 
 // ============================================================
 // generateLocalAssign — local x = expr
-//
-// Shadow-safety fix: In Lua, `local x = x * 10` means "read the
-// *outer* x, then create a new x".  In C, `int x = x * 10` is UB
-// because the RHS sees the new (uninitialised) x.
-// Solution: when the variable name already exists in an *outer*
-// scope (parent or higher), evaluate the RHS into a uniquely-named
-// temp first, then declare the shadow from the temp.
-//
-//   int __tmp_shadow_current_val = (current_val * 10);
-//   int current_val = __tmp_shadow_current_val;
-//
-// When there is no shadowing the old single-line form is used.
 // ============================================================
 
-// Counter for unique temp names (reset per generateCode call via buf_init path)
+// Counter for unique temp names
 static int g_shadow_tmp_counter = 0;
 
 static void generateLocalAssign(ASTNode* node, int indent, SymbolTable* table) {
-    ASTNode*    varNode = node->children[0];
-    ASTNode*    valNode = node->children[1];
-    const char* name    = varNode->token.value;
+    ASTNode* varNode = node->children[0];
+    ASTNode* valNode = node->children[1];
+    const char* name = varNode->token.value;
 
     // Look up type in the current (innermost) scope table.
-    SymbolRecord* rec   = lookupSymbol(table, name);
-    SymbolType    sType = rec ? rec->type : TYPE_UNKNOWN;
-    const char*   cType = cTypeName(sType);
+    SymbolRecord* rec = lookupSymbol(table, name);
+    SymbolType sType = rec ? rec->type : TYPE_UNKNOWN;
+    const char* cType = cTypeName(sType);
 
-    // Detect shadowing: does this name exist in a *parent* scope?
-    // (The current table was just entered, so any record in table->parent_table
-    //  or higher is the outer binding that the RHS should see.)
+    //detect shadowing: does this name exist in a parent scope
     int isShadow = 0;
     if (table->parent_table != NULL) {
         SymbolRecord* outer = lookupSymbol(table->parent_table, name);
@@ -369,7 +352,6 @@ static void generateLocalAssign(ASTNode* node, int indent, SymbolTable* table) {
     }
 
     if (isShadow) {
-        // Step 1: evaluate RHS into a temp (still sees the outer `name`)
         char tmpName[128];
         snprintf(tmpName, sizeof(tmpName), "__tmp_shadow_%s_%d", name, g_shadow_tmp_counter++);
 
@@ -381,7 +363,7 @@ static void generateLocalAssign(ASTNode* node, int indent, SymbolTable* table) {
         generateExpression(valNode, table);
         buf_append(";\n");
 
-        // Step 2: declare the shadow from the temp
+        //declare the shadow from the temp
         write_indent(indent);
         buf_append(cType);
         buf_append(" ");
@@ -389,8 +371,12 @@ static void generateLocalAssign(ASTNode* node, int indent, SymbolTable* table) {
         buf_append(" = ");
         buf_append(tmpName);
         buf_append(";\n");
+        //int current_val = 1;
+        //if ((is_prime(current_val) == 1)) {
+            //int __tmp_shadow_current_val_0 = (current_val * 10);
+            //int current_val = __tmp_shadow_current_val_0;
     } else {
-        // No shadowing — simple single-line form
+        //no shadowing, simple single-line form
         write_indent(indent);
         buf_append(cType);
         buf_append(" ");
@@ -402,10 +388,7 @@ static void generateLocalAssign(ASTNode* node, int indent, SymbolTable* table) {
 }
 
 // ============================================================
-// generateIf — if / elseif / else
-// Each branch body has its own child scope created during semantic
-// analysis (in the exact order they appear in the source).  We call
-// getNextChildScope(table) once per branch to follow that order.
+// generateIf — if / elseif / else IN ORDER
 // ============================================================
 static void generateIf(ASTNode* node, int indent, SymbolTable* table) {
     write_indent(indent);
@@ -413,7 +396,6 @@ static void generateIf(ASTNode* node, int indent, SymbolTable* table) {
     generateExpression(node->children[0], table);
     buf_append(") {\n");
 
-    // Consume the child scope for the if-body.
     SymbolTable* ifScope = getNextChildScope(table);
     generateBlock(node->children[1], indent + 1, ifScope ? ifScope : table);
 
@@ -423,8 +405,7 @@ static void generateIf(ASTNode* node, int indent, SymbolTable* table) {
         ASTNode* elseNode = node->children[2];
 
         if (elseNode->type == AST_IF) {
-            // Walk the whole elseif chain iteratively so every branch
-            // consumes exactly one child scope in creation order.
+            //walk the whole elseif chain iteratively so every branch consumes exactly one child scope in creation order
             ASTNode* cur = elseNode;
             while (cur != NULL && cur->type == AST_IF) {
                 write_indent(indent);
@@ -443,7 +424,7 @@ static void generateIf(ASTNode* node, int indent, SymbolTable* table) {
                     cur = NULL;
                 }
             }
-            // cur is now a plain else block or NULL
+            //cur is now a plain else block or NULL
             if (cur != NULL) {
                 write_indent(indent);
                 buf_append("} else {\n");
@@ -451,25 +432,24 @@ static void generateIf(ASTNode* node, int indent, SymbolTable* table) {
                 generateBlock(cur, indent + 1, elseScope ? elseScope : table);
             }
         } else {
-            // Plain else block
+            //else block
             write_indent(indent);
             buf_append("} else {\n");
             SymbolTable* elseScope = getNextChildScope(table);
             generateBlock(elseNode, indent + 1, elseScope ? elseScope : table);
         }
     }
-
     write_indent(indent);
     buf_append("}\n");
 }
 
 // ============================================================
-// generateLoop — while / repeat-until
+// generateLoop - while / repeat-until
 // ============================================================
 static void generateLoop(ASTNode* node, int indent, SymbolTable* table) {
-    // Each loop body got its own child scope during semantic analysis.
+    //each loop body got its own child scope during semantic analysis
     SymbolTable* loopScope = getNextChildScope(table);
-    SymbolTable* inner     = loopScope ? loopScope : table;
+    SymbolTable* inner = loopScope ? loopScope : table;
 
     if (node->type == AST_WHILE) {
         write_indent(indent);
@@ -480,7 +460,7 @@ static void generateLoop(ASTNode* node, int indent, SymbolTable* table) {
         write_indent(indent);
         buf_append("}\n");
     } else {
-        // REPEAT / UNTIL → do { ... } while (!(condition));
+        // REPEAT / UNTIL -> do { ... } while (!(condition));
         write_indent(indent);
         buf_append("do {\n");
         generateBlock(node->children[0], indent + 1, inner);
@@ -492,21 +472,21 @@ static void generateLoop(ASTNode* node, int indent, SymbolTable* table) {
 }
 
 // ============================================================
-// generateFor — numeric for loop
+// generateFor - numeric for loop
 // ============================================================
 static void generateFor(ASTNode* node, int indent, SymbolTable* table) {
-    ASTNode* varNode   = node->children[0];
+    ASTNode* varNode = node->children[0];
     ASTNode* startNode = node->children[1];
     ASTNode* limitNode = node->children[2];
     ASTNode* stepNode  = node->children[3];
     ASTNode* bodyNode  = node->children[4];
 
-    // Advance into the for-loop's child scope (holds the iterator variable).
+    //advance into the for-loop child scope (holds the iterator variable)
     SymbolTable* forScope = getNextChildScope(table);
-    SymbolTable* inner    = forScope ? forScope : table;
+    SymbolTable* inner = forScope ? forScope : table;
 
-    SymbolRecord* rec   = lookupSymbol(inner, varNode->token.value);
-    const char*   cType = (rec && rec->type != TYPE_UNKNOWN) ? cTypeName(rec->type) : "int";
+    SymbolRecord* rec = lookupSymbol(inner, varNode->token.value);
+    const char* cType = (rec && rec->type != TYPE_UNKNOWN) ? cTypeName(rec->type) : "int";
 
     write_indent(indent);
     buf_append("for (");
@@ -531,23 +511,20 @@ static void generateFor(ASTNode* node, int indent, SymbolTable* table) {
 }
 
 // ============================================================
-// generateFunction — function declaration
-// FIX #3: The caller (generateFunctions) passes the function-local
-// SymbolTable so locals inside the body resolve correctly.
+// generateFunction - function declaration
 // ============================================================
 static void generateFunction(ASTNode* node, int indent, SymbolTable* table) {
-    const char* funcName   = node->token.value;
-    int         paramCount = node->childCount - 1;
-    ASTNode*    bodyNode   = node->children[node->childCount - 1];
+    const char* funcName = node->token.value;
+    int paramCount = node->childCount - 1;
+    ASTNode* bodyNode = node->children[node->childCount - 1];
 
-    // Look up the function record in whichever table was passed in (which
-    // may be the function-local scope whose parent is the global table).
-    SymbolRecord* funcRec    = lookupSymbol(table, funcName);
-    SymbolType    returnType = (funcRec && funcRec->type == TYPE_FUNCTION)
+    // Look up the function record in whichever table was passed in
+    SymbolRecord* funcRec = lookupSymbol(table, funcName);
+    SymbolType returnType = (funcRec && funcRec->type == TYPE_FUNCTION)
                                ? funcRec->data.func_data.return_type
                                : TYPE_UNKNOWN;
-    const char*   retCType   = cTypeName(returnType);
-
+    const char* retCType = cTypeName(returnType);
+    //params
     write_indent(indent);
     buf_append(retCType);
     buf_append(" ");
@@ -574,13 +551,13 @@ static void generateFunction(ASTNode* node, int indent, SymbolTable* table) {
 }
 
 // ============================================================
-// generateCall — function call statement
+// generateCall - function call statement
 // ============================================================
 static void generateCall(ASTNode* node, int indent, SymbolTable* table) {
     write_indent(indent);
     const char* funcName = node->token.value;
 
-    // Special case: Lua print() → printf
+    //prinbt to printf
     if (strcmp(funcName, "print") == 0) {
         if (node->childCount == 0) {
             buf_append("printf(\"\\n\");\n");
@@ -617,7 +594,7 @@ static void generateCall(ASTNode* node, int indent, SymbolTable* table) {
         return;
     }
 
-    // Regular call
+    //regular call
     buf_append(funcName);
     buf_append("(");
     for (int i = 0; i < node->childCount; i++) {
@@ -640,11 +617,7 @@ static void generateReturn(ASTNode* node, int indent, SymbolTable* table) {
 }
 
 // ============================================================
-// generateCode — main entry point
-// Top-level Lua statements become the C main() body.
-// A top-level `return <call>()` (the Lua entry-point idiom,
-// e.g. `return mainLua()`) is emitted as a plain call so the
-// program runs it and then falls through to `return 0`.
+// generateCode
 // ============================================================
 
 static int isEntryPointReturn(ASTNode* node) {
@@ -656,7 +629,7 @@ static int isEntryPointReturn(ASTNode* node) {
 
 void generateCode(ASTNode* root, SymbolTable* globalTable, const char* outputFilename) {
     buf_init();
-    g_shadow_tmp_counter = 0;  // reset per compilation unit
+    g_shadow_tmp_counter = 0;
 
     buf_append("#include <stdio.h>\n");
     buf_append("#include <stdlib.h>\n");
@@ -699,9 +672,8 @@ void generateCode(ASTNode* root, SymbolTable* globalTable, const char* outputFil
         for (int i = 0; i < root->childCount; i++) {
             ASTNode* child = root->children[i];
             if (!child || child->type == AST_FUNCTION_DECL) continue;
-
+            //lua entry point, the return at the end of the file
             if (isEntryPointReturn(child)) {
-                // `return foo()` → plain call, then fall through to return 0
                 generateCall(child->children[0], 1, globalTable);
                 continue;
             }
