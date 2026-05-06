@@ -55,9 +55,9 @@ typedef struct SymbolTable {
     HashEntry* buckets[HASH_TABLE_SIZE];
     struct SymbolTable*  parent_table;
     struct SymbolTable** children;
-    int                  childCount;
-    int                  childCapacity;
-    int                  nextChild;
+    int childCount;
+    int childCapacity;
+    int nextChild;
 } SymbolTable;
 
 
