@@ -432,6 +432,7 @@ ASTNode* parseExpression(Parser* p) {
                     addChild(callNode, parseExpression(p));
                     if (peek(p).type == TOKEN_PUNC_COMMA) consume(p); 
                 }
+
                 consume(p);
                 nodeStack[nodeTop++] = callNode; 
             } else {
@@ -474,17 +475,16 @@ ASTNode* parseExpression(Parser* p) {
     return NULL;
 }
 // ==========================================
-// חלק 5: הדפסת העץ (לצורכי דיבאגינג)
+// הדפסת העץ (לצורכי דיבאגינג)
 // ==========================================
 
-// פונקציית עזר להמרת סוג הצומת למחרוזת קריאה
+
 const char* getNodeTypeName(ASTNodeType type) {
     switch(type) {
         case AST_PROGRAM: return "AST_PROGRAM";
         case AST_BLOCK: return "AST_BLOCK";
         case AST_ASSIGNMENT: return "AST_ASSIGNMENT";
-        case AST_LOCAL_ASSIGN: return "AST_LOCAL_ASSIGN"; // <--- הוסף את השורה הזו
-        case AST_IF: return "AST_IF";
+        case AST_LOCAL_ASSIGN: return "AST_LOCAL_ASSIGN";
         case AST_WHILE: return "AST_WHILE";
         case AST_FOR: return "AST_FOR";
         case AST_REPEAT: return "AST_REPEAT";
@@ -501,25 +501,18 @@ const char* getNodeTypeName(ASTNodeType type) {
     }
 }
 
-// פונקציה רקורסיבית להדפסת העץ עם הזחות (אינדנטציה) לפי העומק
+
 void printAST(ASTNode* node, int depth) {
     if (!node) return;
     
-    // הדפסת רווחים לפי עומק הצומת בעץ
     for (int i = 0; i < depth; i++) {
         printf("  |--");
     }
-    
-    // הדפסת סוג הצומת
     printf("%s", getNodeTypeName(node->type));
-    
-    // אם יש לטוקן ערך (כמו שם משתנה, מספר או אופרטור), נדפיס גם אותו
     if (node->token.value) {
         printf(" ('%s')", node->token.value);
     }
     printf("\n");
-    
-    // קריאה רקורסיבית לכל הילדים
     for (int i = 0; i < node->childCount; i++) {
         printAST(node->children[i], depth + 1);
     }
