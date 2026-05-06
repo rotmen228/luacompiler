@@ -140,9 +140,9 @@ SymbolRecord* createFuncRecord(const char* name, SymbolType returnType, SymbolTy
 
 void insertSymbol(SymbolTable* table, SymbolRecord* record) {
     unsigned int index = hash(record->name);
-    HashEntry* entry   = (HashEntry*)malloc(sizeof(HashEntry));
+    HashEntry* entry = (HashEntry*)malloc(sizeof(HashEntry));
     entry->record = record;
-    entry->next   = table->buckets[index];
+    entry->next = table->buckets[index];
     table->buckets[index] = entry;
 }
 
