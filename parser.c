@@ -71,8 +71,6 @@ ASTNode* runParser(TokenList* tokens) {
     
     Token dummyToken = {TOKEN_EOF, NULL, 0};
     ASTNode* programNode = createNode(AST_PROGRAM, dummyToken);
-    
-    // קוראים פקודות בלולאה כל עוד לא הגענו לסוף הקובץ
     while (peek(&p).type != TOKEN_EOF) {
         ASTNode* stmt = parseStatement(&p);
         if (stmt) {
@@ -82,11 +80,10 @@ ASTNode* runParser(TokenList* tokens) {
     
     return programNode;
 }
-// ==========================================
-// חלק 3: ניתוח פקודות (Statements)
-// ==========================================
 
-// הפונקציה המרכזית שמנתבת את סוג הפקודה
+// ==========================================
+// Recursive Descent
+// ==========================================
 ASTNode* parseStatement(Parser* p) {
     Token t = peek(p);
     switch (t.type) {
@@ -100,44 +97,32 @@ ASTNode* parseStatement(Parser* p) {
         case TOKEN_IDENTIFIER:  return parseAssignOrCall(p);
         default:
             printf("Syntax Error at line %d: Invalid statement (got '%s')\n", t.line, t.value ? t.value : "EOF");
-            consume(p); // התקדמות כדי למנוע לולאה אינסופית בשגיאה
+            consume(p);
             return NULL;
     }
 }
 ASTNode* parseLocal(Parser* p) {
-    consume(p); // בולע את המילה 'local'
+    consume(p); //local
     
-    Token id = consume(p); // קריאת שם המשתנה (Identifier)
+    Token id = consume(p); //id
     if (id.type != TOKEN_IDENTIFIER) {
         parseError(p, "Expected variable name after 'local'");
     }
-
-    // ---> התיקון הקריטי: יוצרים צומת מסוג זיהוי משתנה (Identifier)
     ASTNode* idNode = createNode(AST_IDENTIFIER, id);
-
-    // בדיקה האם יש סימן שווה (אופציונלי בלואה - משתנה יכול להיות nil)
     if (match(p, TOKEN_OP_ASSIGN)) {
         ASTNode* valueNode = parseExpression(p);
-        
-        // יצירת צומת השמה מקומית
         ASTNode* assignNode = createNode(AST_LOCAL_ASSIGN, (Token){TOKEN_OP_ASSIGN, "=", p->list->tokens[p->current - 1].line});
-        
         addChild(assignNode, idNode);
         addChild(assignNode, valueNode);
         return assignNode;
-    } else {
-        // אתחול ל-nil במידה ואין '='
+    } else { //no assignment, is nil
         ASTNode* nilNode = createNode(AST_NIL, (Token){TOKEN_KW_NIL, "nil", p->list->tokens[p->current - 1].line});
-        
-        // יצירת צומת השמה מקומית
         ASTNode* assignNode = createNode(AST_LOCAL_ASSIGN, (Token){TOKEN_OP_ASSIGN, "=", p->list->tokens[p->current - 1].line});
-        
         addChild(assignNode, idNode);
         addChild(assignNode, nilNode);
         return assignNode;
     }
 }
-// --- מימוש RETURN ---
 ASTNode* parseReturn(Parser* p) {
     // 1. צרוך את האסימון return
     Token returnToken = consume(p); 
@@ -163,10 +148,9 @@ ASTNode* parseReturn(Parser* p) {
     // 3. החזר צומת מסוג RETURN עם ילד אחד
     ASTNode* returnNode = createNode(AST_RETURN, returnToken);
     addChild(returnNode, valueNode);
-    
     return returnNode;
 }
-// --- מימוש השמה או קריאה לפונקציה ---
+
 ASTNode* parseAssignOrCall(Parser* p) {
     // 1. שמור את שם המשתנה/הפונקציה מהאסימון הנוכחי IDENTIFIER וצרוך אותו.
     Token idToken = consume(p);
@@ -218,8 +202,7 @@ ASTNode* parseAssignOrCall(Parser* p) {
         return NULL; // לא יקרה בפועל כי parseError עושה exit
     }
 }
-//fixed to support elseif
-// --- מימוש IF (כולל תמיכה ב-ELSEIF) ---
+
 ASTNode* parseIf(Parser* p) {
     Token ifToken = consume(p); // בולע 'if' או 'elseif'
     ASTNode* condition = parseExpression(p);
@@ -229,21 +212,17 @@ ASTNode* parseIf(Parser* p) {
     ASTNode* body = parseBlock(p);
     ASTNode* elseNode = NULL;
     
-    // אם יש elseif, אנחנו קוראים שוב ל-parseIf! 
-    // זה יבנה תת-עץ חדש של IF, ונחבר אותו בתור ה-ELSE שלנו.
+    //call parseif again if elseif
     if (peek(p).type == TOKEN_KW_ELSEIF) {
         elseNode = parseIf(p); 
     } 
     else if (match(p, TOKEN_KW_ELSE)) {
         elseNode = parseBlock(p);
     }
-    
-    // רק ה-if הראשי והמקורי דורש end בסוף. 
-    // ה-elseif הפנימי כבר "ירכב" על ה-end של ה-if הראשי.
+    //only one "end" needed
     if (ifToken.type == TOKEN_KW_IF) {
         if (!match(p, TOKEN_KW_END)) parseError(p, "Expected 'end' to close if statement");
     }
-    
     ASTNode* node = createNode(AST_IF, ifToken);
     addChild(node, condition);
     addChild(node, body);
@@ -253,7 +232,6 @@ ASTNode* parseIf(Parser* p) {
     return node;
 }
 
-// --- מימוש WHILE ---
 ASTNode* parseWhile(Parser* p) {
     Token whileToken = consume(p);
     ASTNode* condition = parseExpression(p);
@@ -270,7 +248,6 @@ ASTNode* parseWhile(Parser* p) {
     return node;
 }
 
-// --- מימוש REPEAT ---
 ASTNode* parseRepeat(Parser* p) {
     Token repeatToken = consume(p);
     ASTNode* body = parseBlock(p);
@@ -284,7 +261,7 @@ ASTNode* parseRepeat(Parser* p) {
     addChild(node, condition);
     return node;
 }
-// --- מימוש FOR ---
+
 ASTNode* parseFor(Parser* p) {
     Token forToken = consume(p);
     Token varName = consume(p);
@@ -297,11 +274,9 @@ ASTNode* parseFor(Parser* p) {
     
     ASTNode* end = parseExpression(p);
     ASTNode* step = NULL;
-    
     if (match(p, TOKEN_PUNC_COMMA)) {
         step = parseExpression(p);
     } else {
-        // ברירת מחדל: צעד 1
         step = createNode(AST_NUMBER, (Token){TOKEN_NUMBER, "1", 0});
     }
     
@@ -318,7 +293,6 @@ ASTNode* parseFor(Parser* p) {
     return node;
 }
 
-// --- מימוש הגדרת פונקציה ---
 ASTNode* parseFunctionDef(Parser* p) {
     Token funcToken = consume(p);
     Token name = consume(p);
@@ -335,7 +309,7 @@ ASTNode* parseFunctionDef(Parser* p) {
         addChild(node, createNode(AST_IDENTIFIER, param));
         if (peek(p).type == TOKEN_PUNC_COMMA) consume(p);
     }
-    consume(p); // צריכת ')'
+    consume(p); //)
     
     addChild(node, parseBlock(p));
     if (!match(p, TOKEN_KW_END)) parseError(p, "Expected 'end' after function body");
@@ -359,10 +333,8 @@ ASTNode* parseBlock(Parser* p) {
     return blockNode;
 }
 // ==========================================
-// חלק 4: ניתוח ביטויים (Shunting Yard)
+// Shunting Yard
 // ==========================================
-
-// פונקציית עזר: קבלת עדיפות האופרטור (Precedence) לפי חוקי Lua
 static int getPrecedence(TokenType type) {
     switch(type) {
         case TOKEN_KW_OR: return 1;
@@ -377,7 +349,6 @@ static int getPrecedence(TokenType type) {
     }
 }
 
-// פונקציית עזר: האם האסימון הנוכחי שייך לביטוי מתמטי/לוגי?
 static bool isExpressionToken(TokenType type) {
     return (type == TOKEN_IDENTIFIER || type == TOKEN_NUMBER || type == TOKEN_STRING ||
             type == TOKEN_PUNC_LPAREN || type == TOKEN_PUNC_RPAREN ||
@@ -388,7 +359,7 @@ static bool isExpressionToken(TokenType type) {
 
 // פונקציית עזר ל-Shunting Yard: שולפת אופרטור ו-2 ילדים, מחברת אותם ודוחפת חזרה
 static void popOperatorToTree(ASTNode** nodeStack, int* nodeTop, Token* opStack, int* opTop) {
-    if (*nodeTop < 2 || *opTop == 0) return; // הגנה משגיאות תחביר של המשתמש
+    if (*nodeTop < 2 || *opTop == 0) return;
 
     Token op = opStack[--(*opTop)];
     ASTNode* right = nodeStack[--(*nodeTop)];
@@ -397,32 +368,25 @@ static void popOperatorToTree(ASTNode** nodeStack, int* nodeTop, Token* opStack,
     ASTNode* binopNode = createNode(AST_BINOP, op);
     addChild(binopNode, left);
     addChild(binopNode, right);
-
-    // דוחפים את תת-העץ החדש חזרה למחסנית הצמתים
     nodeStack[(*nodeTop)++] = binopNode;
 }
 
-// הפונקציה המרכזית שמנתחת את הביטוי (Expression)
 ASTNode* parseExpression(Parser* p) {
     ASTNode* nodeStack[128];
     int nodeTop = 0;
     Token opStack[128];
     int opTop = 0;
-    
     bool expectOperand = true;
-
+    //עצירה במקרה שאנחנו מצפים לאופרנד וקיבלנו אופרטור
     while (isExpressionToken(peek(p).type)) {
         TokenType nextType = peek(p).type;
-        
-        // הגנה 1: עצירה בין שורות ללא נקודה-פסיק
         if (!expectOperand && (nextType == TOKEN_IDENTIFIER || nextType == TOKEN_NUMBER || 
                                nextType == TOKEN_STRING || nextType == TOKEN_PUNC_LPAREN ||
                                nextType == TOKEN_KW_NIL || nextType == TOKEN_KW_TRUE || 
                                nextType == TOKEN_KW_FALSE || nextType == TOKEN_KW_FUNCTION)) {
             break;
         }
-        
-        // הגנה 2: עצירה במקרה של סוגר ימני ששייך לפונקציה עוטפת
+        // עצירה במקרה של סוגר ימני ששייך לפונקציה עוטפת
         if (nextType == TOKEN_PUNC_RPAREN) {
             bool hasMatchingParen = false;
             for (int i = 0; i < opTop; i++) {
@@ -433,10 +397,8 @@ ASTNode* parseExpression(Parser* p) {
             }
             if (!hasMatchingParen) break; 
         }
-
+        //simple operand
         Token t = consume(p);
-
-        // מקרה 1: ערכים פשוטים (מספר, מחרוזת, בוליאני, nil)
         if (t.type == TOKEN_NUMBER || t.type == TOKEN_STRING || 
             t.type == TOKEN_KW_NIL || t.type == TOKEN_KW_TRUE || t.type == TOKEN_KW_FALSE) {
             
@@ -444,28 +406,24 @@ ASTNode* parseExpression(Parser* p) {
             if (t.type == TOKEN_STRING) type = AST_STRING;
             else if (t.type == TOKEN_KW_NIL) type = AST_NIL;
             else if (t.type == TOKEN_KW_TRUE || t.type == TOKEN_KW_FALSE) type = AST_IDENTIFIER;
-            
             nodeStack[nodeTop++] = createNode(type, t);
         } 
-        // מקרה 1.5: פונקציה אנונימית (Closure) בתור ביטוי (למשל: return function(x))
+        //function
         else if (t.type == TOKEN_KW_FUNCTION) {
             ASTNode* funcNode = createNode(AST_FUNCTION_DECL, t);
             if (!match(p, TOKEN_PUNC_LPAREN)) parseError(p, "Expected '(' for anonymous function");
-            
             while (peek(p).type != TOKEN_PUNC_RPAREN && peek(p).type != TOKEN_EOF) {
                 Token param = consume(p);
                 if (param.type != TOKEN_IDENTIFIER) parseError(p, "Expected parameter name");
                 addChild(funcNode, createNode(AST_IDENTIFIER, param));
                 if (peek(p).type == TOKEN_PUNC_COMMA) consume(p);
             }
-            consume(p); // בולע ')'
-            
+            consume(p);//)
             addChild(funcNode, parseBlock(p));
             if (!match(p, TOKEN_KW_END)) parseError(p, "Expected 'end' to close anonymous function");
-            
             nodeStack[nodeTop++] = funcNode;
         }
-        // מקרה 2: מזהה (קריאה לפונקציה או משתנה)
+        //function call or identifier
         else if (t.type == TOKEN_IDENTIFIER) {
             if (peek(p).type == TOKEN_PUNC_LPAREN) {
                 consume(p); 
@@ -480,18 +438,18 @@ ASTNode* parseExpression(Parser* p) {
                 nodeStack[nodeTop++] = createNode(AST_IDENTIFIER, t);
             }
         } 
-        // מקרה 3: סוגר פותח
+        //add left paren
         else if (t.type == TOKEN_PUNC_LPAREN) {
             opStack[opTop++] = t;
         } 
-        // מקרה 4: סוגר סוגר
+        //process stack until left paren
         else if (t.type == TOKEN_PUNC_RPAREN) {
             while (opTop > 0 && opStack[opTop - 1].type != TOKEN_PUNC_LPAREN) {
                 popOperatorToTree(nodeStack, &nodeTop, opStack, &opTop);
             }
             if (opTop > 0) opTop--; 
         } 
-        // מקרה 5: אופרטור מתמטי/לוגי
+        //operator
         else if (getPrecedence(t.type) > 0) {
             while (opTop > 0 && getPrecedence(opStack[opTop - 1].type) >= getPrecedence(t.type)) {
                 popOperatorToTree(nodeStack, &nodeTop, opStack, &opTop);
@@ -499,7 +457,7 @@ ASTNode* parseExpression(Parser* p) {
             opStack[opTop++] = t; 
         }
 
-        // --- עדכון סטטוס המטוטלת בסוף כל סיבוב ---
+        //update expectOperand flag
         if (t.type == TOKEN_IDENTIFIER || t.type == TOKEN_NUMBER || 
             t.type == TOKEN_STRING || t.type == TOKEN_PUNC_RPAREN ||
             t.type == TOKEN_KW_NIL || t.type == TOKEN_KW_TRUE || t.type == TOKEN_KW_FALSE ||
@@ -509,10 +467,9 @@ ASTNode* parseExpression(Parser* p) {
             expectOperand = true;  
         }
     }
-
+    //cleanup
     while (opTop > 0) popOperatorToTree(nodeStack, &nodeTop, opStack, &opTop);
     if (nodeTop > 0) return nodeStack[0];
-    
     parseError(p, "Invalid or empty expression");
     return NULL;
 }
