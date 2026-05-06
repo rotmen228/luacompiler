@@ -4,20 +4,16 @@
 #include "semantic.h"
 #include "error_handler.h"
 
-
+//for return
 static SymbolRecord* currentFunctionScope = NULL;
 
 
-// Array collecting every function-scope table so codegen can retrieve them.
+// Array collecting every function-scope table so codegen can retrieve them in O(1)
 static SymbolTable* allScopes[100];
-static const char*  allScopeNames[100];
-static const char*  allFuncParamNames[100][20];
-static int          scopeCount = 0;
+static const char* allScopeNames[100];
+static const char* allFuncParamNames[100][20];
+static int scopeCount = 0;
 
-// ============================================================
-// Public: let codegen look up the local SymbolTable for a
-// named function.  Returns NULL if not found.
-// ============================================================
 SymbolTable* getFuncScope(const char* funcName) {
     for (int i = 0; i < scopeCount; i++) {
         if (strcmp(allScopeNames[i], funcName) == 0) {
@@ -30,7 +26,6 @@ SymbolTable* getFuncScope(const char* funcName) {
 // ==========================================
 // Debug / print helpers
 // ==========================================
-
 static const char* getSymbolTypeName(SymbolType type) {
     switch(type) {
         case TYPE_INT:      return "int";
@@ -111,8 +106,6 @@ SymbolTable* createSymbolTable(SymbolTable* parent) {
     table->childCount    = 0;
     table->childCapacity = 0;
     table->nextChild     = 0;
-
-    // Auto-register as a child of our parent so codegen can walk the tree.
     if (parent != NULL) {
         if (parent->childCount >= parent->childCapacity) {
             int newCap = (parent->childCapacity == 0) ? 4 : parent->childCapacity * 2;
@@ -136,12 +129,12 @@ SymbolRecord* createVarRecord(const char* name, SymbolType type, ScopeType scope
 
 SymbolRecord* createFuncRecord(const char* name, SymbolType returnType, SymbolType* paramTypes, int paramCount) {
     SymbolRecord* record = (SymbolRecord*)malloc(sizeof(SymbolRecord));
-    record->name  = strdup(name);
-    record->type  = TYPE_FUNCTION;
+    record->name = strdup(name);
+    record->type = TYPE_FUNCTION;
     record->scope = SCOPE_GLOBAL;
-    record->data.func_data.return_type         = returnType;
-    record->data.func_data.params.param_types  = paramTypes;
-    record->data.func_data.params.param_count  = paramCount;
+    record->data.func_data.return_type = returnType;
+    record->data.func_data.params.param_types = paramTypes;
+    record->data.func_data.params.param_count = paramCount;
     return record;
 }
 
