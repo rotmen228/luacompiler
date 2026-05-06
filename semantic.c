@@ -7,18 +7,6 @@
 
 static SymbolRecord* currentFunctionScope = NULL;
 
-static void analyzeSemanticBlock(ASTNode** nodes, int count, SymbolTable* table);
-static void analyzeSemanticAssign(ASTNode* node, SymbolTable* table);
-static void analyzeSemanticLocal(ASTNode* node, SymbolTable* table);
-static void analyzeSemanticIf(ASTNode* node, SymbolTable* table);
-static void analyzeSemanticLoop(ASTNode* node, SymbolTable* table);
-static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table);
-static void analyzeSemanticFor(ASTNode* node, SymbolTable* table);
-static void analyzeSemanticCall(ASTNode* node, SymbolTable* table);
-static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table);
-static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolType right, int line);
-SymbolTable* getFuncScope(const char* funcName);
-
 
 // Array collecting every function-scope table so codegen can retrieve them.
 static SymbolTable* allScopes[100];
