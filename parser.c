@@ -408,7 +408,7 @@ ASTNode* parseExpression(Parser* p) {
             else if (t.type == TOKEN_KW_TRUE || t.type == TOKEN_KW_FALSE) type = AST_IDENTIFIER;
             nodeStack[nodeTop++] = createNode(type, t);
         } 
-        //function
+        //function def
         else if (t.type == TOKEN_KW_FUNCTION) {
             ASTNode* funcNode = createNode(AST_FUNCTION_DECL, t);
             if (!match(p, TOKEN_PUNC_LPAREN)) parseError(p, "Expected '(' for anonymous function");
