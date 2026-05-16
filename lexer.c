@@ -23,6 +23,7 @@ static void addToken(TokenList* list, TokenType type, const char* value, int lin
         list->capacity *= 2;
         list->tokens = (Token*)realloc(list->tokens, list->capacity * sizeof(Token));
     }
+    //copying to the list
     list->tokens[list->count].type = type;
     list->tokens[list->count].value = value ? strdup(value) : NULL;
     list->tokens[list->count].line = line;
@@ -33,7 +34,7 @@ static void addToken(TokenList* list, TokenType type, const char* value, int lin
 static TokenType identifyKeywordOrId(const char* word) {
     for (int i = 0; i < KEYWORD_DICT_SIZE; i++) {
         if (strcmp(word, keyword_dict[i].text) == 0) {
-            return keyword_dict[i].type; // מצאנו מילת מפתח!
+            return keyword_dict[i].type; // מצאנו מילת מפתח
         }
     }
     
@@ -60,128 +61,128 @@ TokenList runLexer(const char* sourceCode) {
     const char* ptr = sourceCode;
     
     while (*ptr != '\0') {
+        //skip whitespaces and track newlines
         if (isspace(*ptr)) {
             if (*ptr == '\n') currentLine++;
             ptr++;
-            continue;
         }
-        
-        //דילוג על הערות)
-        if (*ptr == '-' && *(ptr+1) == '-') {
+        //skip comments starting with '--'
+        else if (*ptr == '-' && *(ptr+1) == '-') {
             while (*ptr != '\n' && *ptr != '\0') ptr++;
-            continue;
         }
-        
-        // התחלת קריאת אסימון חדש - מנגנון Maximal Munch
-        const char* startPos = ptr;
-        LexerState state = STATE_START;
-        char buffer[256] = {0};
-        int bufIdx = 0;
-        bool hasDot = false;
-        
-        while (state != STATE_ERROR && *ptr != '\0') {
-            char c = *ptr;
+        else{
+            //start reading a new token using a state machine
+            const char* startPos = ptr;
+            LexerState state = STATE_START;
+            char buffer[256] = {0};
+            int bufIdx = 0;
+            bool hasDot = false;
             
-            switch (state) {
-                case STATE_START:
-                    if (isalpha(c) || c == '_') {
-                        state = STATE_IN_ID;
-                        buffer[bufIdx++] = c;
-                        ptr++;
-                    } else if (isdigit(c)) {
-                        state = STATE_NUMBER;
-                        buffer[bufIdx++] = c;
-                        ptr++;
-                    } else if (c == '"' || c == '\'') {
-                        state = STATE_STRING;
-                        ptr++; // מדלגים על המרכאות
-                    } else if (strchr("+-*/=~<>.(),:%", c)) {
-                        state = STATE_OPERATOR;
-                        buffer[bufIdx++] = c;
-                        ptr++;
-                    } else {
-                        state = STATE_ERROR; // תו לא חוקי
-                        buffer[bufIdx++] = c;
-                        ptr++;
-                    }
-                    break;
-                    
-                case STATE_IN_ID:
-                    if (isalnum(c) || c == '_') {
-                        buffer[bufIdx++] = c;
-                        ptr++;
-                    } else {
-                        state = STATE_ERROR;
-                    }
-                    break;
-                    
-                case STATE_NUMBER:
-                    if (isdigit(c)) {
-                        buffer[bufIdx++] = c;
-                        ptr++;
-                    } else if (c == '.') {
-                        if (*(ptr + 1) == '.') {
-                            state = STATE_ERROR;
-                        } 
-                        else if (hasDot) {
-                            state = STATE_ERROR; 
-                        } 
-                        else {
-                            hasDot = true;
+            while (state != STATE_ERROR && *ptr != '\0') {
+                char c = *ptr;
+                
+                switch (state) {
+                    case STATE_START:
+                        if (isalpha(c) || c == '_') {
+                            state = STATE_IN_ID;
+                            buffer[bufIdx++] = c;
+                            ptr++;
+                        } else if (isdigit(c)) {
+                            state = STATE_NUMBER;
+                            buffer[bufIdx++] = c;
+                            ptr++;
+                        } else if (c == '"' || c == '\'') {
+                            state = STATE_STRING;
+                            ptr++; // מדלגים על המרכאות
+                        } else if (strchr("+-*/=~<>.(),:%", c)) {
+                            state = STATE_OPERATOR;
+                            buffer[bufIdx++] = c;
+                            ptr++;
+                        } else {
+                            state = STATE_ERROR; // תו לא חוקי
                             buffer[bufIdx++] = c;
                             ptr++;
                         }
-                    } else {
-                        state = STATE_ERROR;
-                    }
-                    break;
-                    
-                case STATE_OPERATOR:
-                    if ((buffer[0] == '=' && c == '=') || 
-                        (buffer[0] == '~' && c == '=') ||
-                        (buffer[0] == '<' && c == '=') ||
-                        (buffer[0] == '>' && c == '=') ||
-                        (buffer[0] == '.' && c == '.')) {
-                        buffer[bufIdx++] = c;
-                        ptr++;
-                    }
-                    state = STATE_ERROR;
-                    break;
-                    
-                case STATE_STRING:
-                    if (c != '"' && c != '\'') {
-                        buffer[bufIdx++] = c;
-                        ptr++;
-                    } else {
-                        ptr++;
-                        state = STATE_ERROR;
-                    }
-                    break;
-                    
-                default:
-                    break;
+                        break;
+                        
+                    case STATE_IN_ID:
+                        if (isalnum(c) || c == '_') {
+                            buffer[bufIdx++] = c;
+                            ptr++;
+                        } else {
+                            state = STATE_ERROR;
+                        }
+                        break;
+                        
+                    case STATE_NUMBER:
+                        if (isdigit(c)) {
+                            buffer[bufIdx++] = c;
+                            ptr++;
+                        } else if (c == '.') {
+                            if (*(ptr + 1) == '.') {
+                                state = STATE_ERROR;
+                            } 
+                            else if (hasDot) {
+                                state = STATE_ERROR; 
+                            } 
+                            else {
+                                hasDot = true;
+                                buffer[bufIdx++] = c;
+                                ptr++;
+                            }
+                        } else {
+                            state = STATE_ERROR;
+                        }
+                        break;
+                        
+                    case STATE_OPERATOR:
+                        //handle two-character operators
+                        if ((buffer[0] == '=' && c == '=') || 
+                            (buffer[0] == '~' && c == '=') ||
+                            (buffer[0] == '<' && c == '=') ||
+                            (buffer[0] == '>' && c == '=') ||
+                            (buffer[0] == '.' && c == '.')) {
+                            buffer[bufIdx++] = c;
+                            ptr++;
+                        }
+                        state = STATE_ERROR;//finish the operator token
+                        break;
+                        
+                    case STATE_STRING:
+                        if (c != '"' && c != '\'') {
+                            buffer[bufIdx++] = c;
+                            ptr++;
+                        } else {
+                            ptr++;//skip the closing quote
+                            state = STATE_ERROR;//finish the string token
+                        }
+                        break;
+                        
+                    default:
+                        break;
+                }
             }
-        }
-        
-        // Tokenize
-        buffer[bufIdx] = '\0';
-        
-        if (startPos[0] == '"' || startPos[0] == '\'') {
-            addToken(&list, TOKEN_STRING, buffer, currentLine);
-        }
-        else if (isalpha(buffer[0]) || buffer[0] == '_') {
-            TokenType type = identifyKeywordOrId(buffer);
-            addToken(&list, type, buffer, currentLine);
-        } 
-        else if (isdigit(buffer[0])) {
-            addToken(&list, TOKEN_NUMBER, buffer, currentLine);
-        }
-        else {
-            TokenType type = identifyOperator(buffer);
-            if (type != TOKEN_ERROR) {
+            
+            //tokenize
+            buffer[bufIdx] = '\0';
+            //identify and add the token to the list based on its starting character
+            if (startPos[0] == '"' || startPos[0] == '\'') {
+                addToken(&list, TOKEN_STRING, buffer, currentLine);
+            }
+            else if (isalpha(buffer[0]) || buffer[0] == '_') {
+                TokenType type = identifyKeywordOrId(buffer);
                 addToken(&list, type, buffer, currentLine);
-            } else {
-                reportError(PHASE_LEXICAL, currentLine, "Unknown character '%s'", buffer);
+            } 
+            else if (isdigit(buffer[0])) {
+                addToken(&list, TOKEN_NUMBER, buffer, currentLine);
+            }
+            else {
+                TokenType type = identifyOperator(buffer);
+                if (type != TOKEN_ERROR) {
+                    addToken(&list, type, buffer, currentLine);
+                } else {
+                    reportError(PHASE_LEXICAL, currentLine, "Unknown character '%s'", buffer);
+                }
             }
         }
     }

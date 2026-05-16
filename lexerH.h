@@ -1,7 +1,8 @@
 #ifndef LEXER_H
 #define LEXER_H
-
 #include <stdbool.h>
+
+//all possible token types in the language
 typedef enum {
     TOKEN_KW_IF, TOKEN_KW_THEN, TOKEN_KW_ELSEIF, TOKEN_KW_ELSE, TOKEN_KW_END,
     TOKEN_KW_WHILE, TOKEN_KW_DO, TOKEN_KW_FOR, TOKEN_KW_REPEAT, TOKEN_KW_UNTIL,
@@ -22,6 +23,8 @@ typedef enum {
     TOKEN_EOF, TOKEN_ERROR
 } TokenType;
 
+
+//states for the lexers state machine
 typedef enum {
     STATE_START,
     STATE_IN_ID,
@@ -31,24 +34,29 @@ typedef enum {
     STATE_ERROR
 } LexerState;
 
+//represents a single extracted token
 typedef struct {
     TokenType type;
+    //buffer for the token, will be freed
     char* value;
+    //lines for error handeling
     int line;
 } Token;
 
+//a dynamic array to hold the parsed tokens
 typedef struct {
     Token* tokens;
     int count;
     int capacity;
 } TokenList;
 
+//dictionary structure to map strings to specific TokenTypes
 typedef struct {
     const char* text;
     TokenType type;
 } TokenDict;
 
-// מילון מילות המפתח (Keywords)
+//dictionary of reserved keywords
 static const TokenDict keyword_dict[] = {
     {"and",      TOKEN_KW_AND},
     {"do",       TOKEN_KW_DO},
@@ -70,7 +78,8 @@ static const TokenDict keyword_dict[] = {
     {"until",    TOKEN_KW_UNTIL},
     {"while",    TOKEN_KW_WHILE}
 };
-// מילון האופרטורים והסימנים (Operators & Punctuation)
+
+//dictionary of operators and punctuation
 static const TokenDict operator_dict[] = {
     {"==", TOKEN_OP_EQ},
     {"~=", TOKEN_OP_NEQ},
@@ -87,12 +96,12 @@ static const TokenDict operator_dict[] = {
     {"=",  TOKEN_OP_ASSIGN},
     {"(",  TOKEN_PUNC_LPAREN},
     {")",  TOKEN_PUNC_RPAREN},
-    {"{",  TOKEN_PUNC_LBRACE},   // <-- הוספנו
-    {"}",  TOKEN_PUNC_RBRACE},   // <-- הוספנו
-    {"[",  TOKEN_PUNC_LBRACKET}, // <-- הוספנו
-    {"]",  TOKEN_PUNC_RBRACKET}, // <-- הוספנו
-    {";",  TOKEN_PUNC_SEMI},     // <-- הוספנו ליתר ביטחון
-    {":",  TOKEN_PUNC_COLON},     // <-- הוספנו ליתר ביטחון
+    {"{",  TOKEN_PUNC_LBRACE},
+    {"}",  TOKEN_PUNC_RBRACE},
+    {"[",  TOKEN_PUNC_LBRACKET},
+    {"]",  TOKEN_PUNC_RBRACKET},
+    {";",  TOKEN_PUNC_SEMI},
+    {":",  TOKEN_PUNC_COLON},
     {",",  TOKEN_PUNC_COMMA}
 };
 

@@ -4,16 +4,16 @@
 #include "semantic.h"
 #include "error_handler.h"
 
-//for return
+//tracks the specific function we are currently analyzing to verify the returns statements type
 static SymbolRecord* currentFunctionScope = NULL;
 
+//arrays to allow a quick search of functions and its parameters without searching the entire AST
+static SymbolTable* allScopes[100]; //pointers to the symbol tables
+static char allScopeNames[100][128]; //the names of those functions
+static char allFuncParamNames[100][20][64]; //params names
+static int scopeCount = 0; //how many functions we have registered so far
 
-// Array collecting every function-scope table so codegen can retrieve them in O(1)
-static SymbolTable* allScopes[100];
-static char allScopeNames[100][128];
-static char allFuncParamNames[100][20][64];
-static int scopeCount = 0;
-
+//searches the flat registry to find the symbol table belonging to a function
 SymbolTable* getFuncScope(const char* funcName) {
     for (int i = 0; i < scopeCount; i++) {
         if (strcmp(allScopeNames[i], funcName) == 0) {
@@ -24,18 +24,18 @@ SymbolTable* getFuncScope(const char* funcName) {
 }
 
 // ==========================================
-// Debug / print helpers
+// debug / print helpers
 // ==========================================
 static const char* getSymbolTypeName(SymbolType type) {
     switch(type) {
-        case TYPE_INT:      return "int";
-        case TYPE_DOUBLE:   return "double";
-        case TYPE_STRING:   return "string";
-        case TYPE_BOOL:     return "bool";
+        case TYPE_INT: return "int";
+        case TYPE_DOUBLE: return "double";
+        case TYPE_STRING: return "string";
+        case TYPE_BOOL: return "bool";
         case TYPE_FUNCTION: return "function";
-        case TYPE_VOID:     return "void";
-        case TYPE_UNKNOWN:  return "UNKNOWN";
-        default:            return "???";
+        case TYPE_VOID: return "void";
+        case TYPE_UNKNOWN: return "UNKNOWN";
+        default: return "???";
     }
 }
 
@@ -55,20 +55,14 @@ void printSymbolTable(SymbolTable* table, const char* scopeName) {
     printf("\n=== Symbol Table: %s ===\n", scopeName);
     printf("%-15s | %-10s | %-15s | %s\n", "Name", "Type", "Scope", "Initialized?");
     printf("----------------------------------------------------------\n");
-
     bool isEmpty = true;
     for (int i = 0; i < HASH_TABLE_SIZE; i++) {
         HashEntry* entry = table->buckets[i];
         while (entry != NULL) {
             isEmpty = false;
             SymbolRecord* rec = entry->record;
-            const char* initStr = (rec->type == TYPE_FUNCTION) ? "N/A" :
-                                  (rec->data.var_data.is_initialized ? "Yes" : "No");
-            printf("%-15s | %-10s | %-15s | %s\n",
-                   rec->name,
-                   getSymbolTypeName(rec->type),
-                   getScopeTypeName(rec->scope),
-                   initStr);
+            const char* initStr = (rec->type == TYPE_FUNCTION) ? "N/A" : (rec->data.var_data.is_initialized ? "Yes" : "No");
+            printf("%-15s | %-10s | %-15s | %s\n", rec->name, getSymbolTypeName(rec->type), getScopeTypeName(rec->scope), initStr);
             entry = entry->next;
         }
     }
@@ -99,9 +93,12 @@ static unsigned int hash(const char* str) {
 
 SymbolTable* createSymbolTable(SymbolTable* parent) {
     SymbolTable* table = (SymbolTable*)malloc(sizeof(SymbolTable));
-    if (!table) { printf("Memory allocation failed for SymbolTable\n"); exit(1); }
+    if (!table) { 
+        printf("Memory allocation failed for SymbolTable\n"); 
+        exit(1); 
+    }
     for (int i = 0; i < HASH_TABLE_SIZE; i++) table->buckets[i] = NULL;
-    table->parent_table  = parent;
+    table->parent_table = parent;
     table->children = NULL;
     table->childCount = 0;
     table->childCapacity = 0;
@@ -109,8 +106,7 @@ SymbolTable* createSymbolTable(SymbolTable* parent) {
     if (parent != NULL) {
         if (parent->childCount >= parent->childCapacity) {
             int newCap = (parent->childCapacity == 0) ? 4 : parent->childCapacity * 2;
-            parent->children = (SymbolTable**)realloc(
-                parent->children, newCap * sizeof(SymbolTable*));
+            parent->children = (SymbolTable**)realloc(parent->children, newCap * sizeof(SymbolTable*));
             parent->childCapacity = newCap;
         }
         parent->children[parent->childCount++] = table;
@@ -139,11 +135,22 @@ SymbolRecord* createFuncRecord(const char* name, SymbolType returnType, SymbolTy
 }
 
 void insertSymbol(SymbolTable* table, SymbolRecord* record) {
-    unsigned int index = hash(record->name);
-    HashEntry* entry = (HashEntry*)malloc(sizeof(HashEntry));
+    unsigned int idx = hash(record->name) % HASH_TABLE_SIZE;
+
+    // Duplicate-declaration check within the same scope
+    for (HashEntry* e = table->buckets[idx]; e != NULL; e = e->next) {
+        if (strcmp(e->record->name, record->name) == 0) {
+            reportError(PHASE_SEMANTIC, 0,
+                "Duplicate declaration of '%s' in the same scope",
+                record->name);
+            return; // don't insert the shadowing entry
+        }
+    }
+
+    HashEntry* entry = malloc(sizeof(HashEntry));
     entry->record = record;
-    entry->next = table->buckets[index];
-    table->buckets[index] = entry;
+    entry->next = table->buckets[idx];
+    table->buckets[idx] = entry;
 }
 
 SymbolRecord* lookupSymbol(SymbolTable* table, const char* name) {
@@ -354,6 +361,11 @@ static void analyzeSemanticIf(ASTNode* node, SymbolTable* table) {
     SymbolTable* ifScope = createSymbolTable(table);
     analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, ifScope);
 
+    SymbolTable* elseScope = getNextChildScope(table);
+    if (elseNode != NULL && elseNode->type != AST_NIL) {
+        analyzeSemanticBlock(elseNode->children, elseNode->childCount, elseScope);
+    }
+
     if (elseNode != NULL) {
         // elseif is another AST_IF node; else is a plain block
         if (elseNode->type == AST_IF) {
@@ -537,18 +549,19 @@ static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
 static void analyzeSemanticBlock(ASTNode** nodes, int count, SymbolTable* table) {
     for (int i = 0; i < count; i++) {
         ASTNode* node = nodes[i];
-        if (!node) continue;
-        switch (node->type) {
-            case AST_ASSIGNMENT:    analyzeSemanticAssign(node, table);   break;
-            case AST_LOCAL_ASSIGN:  analyzeSemanticLocal(node, table);    break;
-            case AST_IF:            analyzeSemanticIf(node, table);       break;
+        if (node){
+            switch (node->type) {
+            case AST_ASSIGNMENT: analyzeSemanticAssign(node, table); break;
+            case AST_LOCAL_ASSIGN: analyzeSemanticLocal(node, table); break;
+            case AST_IF: analyzeSemanticIf(node, table); break;
             case AST_WHILE:
-            case AST_REPEAT:        analyzeSemanticLoop(node, table);     break;
+            case AST_REPEAT: analyzeSemanticLoop(node, table); break;
             case AST_FUNCTION_DECL: analyzeSemanticFunction(node, table); break;
-            case AST_FOR:           analyzeSemanticFor(node, table);      break;
-            case AST_FUNCTION_CALL: analyzeSemanticCall(node, table);     break;
-            case AST_RETURN:        analyzeSemanticReturn(node, table);   break;
+            case AST_FOR: analyzeSemanticFor(node, table); break;
+            case AST_FUNCTION_CALL: analyzeSemanticCall(node, table); break;
+            case AST_RETURN: analyzeSemanticReturn(node, table); break;
             default: break;
+            }
         }
     }
 }
@@ -565,4 +578,36 @@ SymbolTable* analyzeSemantic(ASTNode* root) {
     analyzeSemanticBlock(root->children, root->childCount, globalTable);
     printf("--- Semantic Analysis completed successfully! ---\n");
     return globalTable;
+}
+
+
+
+//cleanup helper
+void freeSymbolTable(SymbolTable* table) {
+    if (!table) return;
+
+    for (int i = 0; i < HASH_TABLE_SIZE; i++) {
+        HashEntry* entry = table->buckets[i];
+        while (entry) {
+            HashEntry* next = entry->next;
+            if (entry->record) {
+                // Free paramTypes for function records
+                if (entry->record->type == TYPE_FUNCTION &&
+                    entry->record->data.func_data.params.param_types) {
+                    free(entry->record->data.func_data.params.param_types);
+                }
+                free(entry->record->name);
+                free(entry->record);
+            }
+            free(entry);
+            entry = next;
+        }
+    }
+
+    // Recurse into children
+    for (int i = 0; i < table->childCount; i++) {
+        freeSymbolTable(table->children[i]);
+    }
+    free(table->children);
+    free(table);
 }

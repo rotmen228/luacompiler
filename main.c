@@ -106,6 +106,8 @@ int main(int argc, char* argv[]) {
     if (source_code) free(source_code);
     freeErrorHandler();
     
+
+    if (global_symbol_table) freeSymbolTable(global_symbol_table);
     // 14. החזר 0
     return 0;
 }

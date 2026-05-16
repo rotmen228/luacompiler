@@ -545,7 +545,12 @@ static void generateFunction(ASTNode* node, int indent, SymbolTable* table) {
     }
 
     buf_append(") {\n");
-    generateBlock(bodyNode, indent + 1, table);
+    SymbolTable* funcScope = getFuncScope(node->token.value);
+    if (!funcScope) {
+        reportError(PHASE_CODEGEN, node->token.line, "Could not find scope for function '%s'", node->token.value);
+        return;
+    }
+    generateBlock(bodyNode, indent + 1, funcScope);
     write_indent(indent);
     buf_append("}\n");
 }
