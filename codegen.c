@@ -227,6 +227,7 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
                     generateExpression(right, table);
                     buf_append(")");
                     break;
+                
 
                 //others, syntax is identical
                 default:
@@ -241,7 +242,16 @@ static void generateExpression(ASTNode* node, SymbolTable* table) {
             }
             break;
         }
-
+        case AST_FUNCTION_CALL: {
+            buf_append(node->token.value);
+            buf_append("(");
+            for (int i = 0; i < node->childCount; i++) {
+                if (i > 0) buf_append(", ");
+                generateExpression(node->children[i], table);
+            }
+            buf_append(")");
+            break;
+        }
         default:
             buf_append("NULL");
             break;
@@ -552,7 +562,8 @@ static void generateFunction(ASTNode* node, int indent, SymbolTable* table) {
     ASTNode* bodyNode = node->children[node->childCount - 1];
 
     //look up the function record and see whats the return type
-    SymbolRecord* funcRec = lookupSymbol(table, funcName);
+    SymbolTable* parentTable = table->parent_table ? table->parent_table : table;
+    SymbolRecord* funcRec = lookupSymbol(parentTable, funcName);
     SymbolType returnType = (funcRec && funcRec->type == TYPE_FUNCTION) ? funcRec->data.func_data.return_type : TYPE_UNKNOWN;
     const char* retCType = cTypeName(returnType);
     //params of function
