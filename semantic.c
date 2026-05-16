@@ -136,14 +136,11 @@ SymbolRecord* createFuncRecord(const char* name, SymbolType returnType, SymbolTy
 
 void insertSymbol(SymbolTable* table, SymbolRecord* record) {
     unsigned int idx = hash(record->name) % HASH_TABLE_SIZE;
-
-    // Duplicate-declaration check within the same scope
+    //duplicate declaration check within the same scope
     for (HashEntry* e = table->buckets[idx]; e != NULL; e = e->next) {
         if (strcmp(e->record->name, record->name) == 0) {
-            reportError(PHASE_SEMANTIC, 0,
-                "Duplicate declaration of '%s' in the same scope",
-                record->name);
-            return; // don't insert the shadowing entry
+            reportError(PHASE_SEMANTIC, 0, "Duplicate declaration of '%s' in the same scope", record->name);
+            return; // dont insert the shadowing entry
         }
     }
 
@@ -167,7 +164,7 @@ SymbolRecord* lookupSymbol(SymbolTable* table, const char* name) {
     return NULL;
 }
 
-// Returns the next child scope of table in creation order, advancing the curser
+//returns the next child scope of table in creation order, advancing the curser
 SymbolTable* getNextChildScope(SymbolTable* table) {
     if (!table || table->nextChild >= table->childCount) return NULL;
     return table->children[table->nextChild++];
@@ -184,13 +181,16 @@ static bool isGlobalTable(SymbolTable* table) {
 }
 
 // ==========================================
-// Type inference
+// type inference
 // ==========================================
-
+//recursively evaluates an AST node to determine what data type it evaluates to
 SymbolType inferType(ASTNode* node, SymbolTable* table) {
-    if (!node) return TYPE_UNKNOWN;
-
+    if (!node)
+    {
+        return TYPE_UNKNOWN;
+    }
     switch (node->type) {
+        //primitive types
         case AST_NUMBER:
             return strchr(node->token.value, '.') ? TYPE_DOUBLE : TYPE_INT;
 
@@ -199,53 +199,57 @@ SymbolType inferType(ASTNode* node, SymbolTable* table) {
 
         case AST_NIL:
             return TYPE_UNKNOWN;
-
+        //variables and bool
         case AST_IDENTIFIER: {
-            if (strcmp(node->token.value, "true") == 0 ||
-                strcmp(node->token.value, "false") == 0) return TYPE_BOOL;
+            if (strcmp(node->token.value, "true") == 0 || strcmp(node->token.value, "false") == 0) return TYPE_BOOL;
+            //var
             SymbolRecord* record = lookupSymbol(table, node->token.value);
-            if (record) return record->type;
+            if (record)
+            {
+                return record->type;
+            }
             reportError(PHASE_SEMANTIC, node->token.line, "Use of undeclared variable '%s'", node->token.value);
             return TYPE_UNKNOWN;
         }
-
+        //infer form expression
         case AST_BINOP: {
-            SymbolType leftType  = inferType(node->children[0], table);
+            SymbolType leftType = inferType(node->children[0], table);
             SymbolType rightType = inferType(node->children[1], table);
             TokenType op = node->token.type;
-            if (op == TOKEN_OP_PLUS || op == TOKEN_OP_MINUS || op == TOKEN_OP_MUL ||
-                op == TOKEN_OP_DIV || op == TOKEN_OP_MOD || op == TOKEN_OP_POW ||
-                op == TOKEN_OP_LT || op == TOKEN_OP_GT || op == TOKEN_OP_LTE ||
-                op == TOKEN_OP_GTE) {
-                //type inference from other type in case its still not identified
+            //math or comparison
+            if (op == TOKEN_OP_PLUS || op == TOKEN_OP_MINUS || op == TOKEN_OP_MUL || op == TOKEN_OP_DIV || op == TOKEN_OP_MOD || op == TOKEN_OP_POW || op == TOKEN_OP_LT || op == TOKEN_OP_GT || op == TOKEN_OP_LTE || op == TOKEN_OP_GTE) {
+                //type inference of left based on right type in case its still not identified
                 if (leftType == TYPE_UNKNOWN && node->children[0]->type == AST_IDENTIFIER) {
                     SymbolRecord* rec = lookupSymbol(table, node->children[0]->token.value);
                     if (rec) {
-                        SymbolType g = (op == TOKEN_OP_MOD) ? TYPE_INT :
-                                       (rightType == TYPE_DOUBLE) ? TYPE_DOUBLE : TYPE_INT;
+                        //modulo is integers only, if right is double so is left
+                        SymbolType g = (op == TOKEN_OP_MOD) ? TYPE_INT : (rightType == TYPE_DOUBLE) ? TYPE_DOUBLE : TYPE_INT;
                         rec->type = g;
-                        leftType  = g;
+                        leftType = g;
                     }
                 }
+                //same thing on right side if unk
                 if (rightType == TYPE_UNKNOWN && node->children[1]->type == AST_IDENTIFIER) {
                     SymbolRecord* rec = lookupSymbol(table, node->children[1]->token.value);
                     if (rec) {
-                        SymbolType g = (op == TOKEN_OP_MOD) ? TYPE_INT :
-                                       (leftType == TYPE_DOUBLE) ? TYPE_DOUBLE : TYPE_INT;
+                        SymbolType g = (op == TOKEN_OP_MOD) ? TYPE_INT : (leftType == TYPE_DOUBLE) ? TYPE_DOUBLE : TYPE_INT;
                         rec->type = g;
                         rightType = g;
                     }
                 }
             }
+            //check if the two stypes can be used in the context of the operator
             return checkTypeCompatibility(leftType, op, rightType, node->token.line);
         }
-
+        //return type of a call
         case AST_FUNCTION_CALL: {
+            //verify the arguments passed to the function
             analyzeSemanticCall(node, table);
+
             if (strcmp(node->token.value, "print") == 0) {
                 return TYPE_VOID;
             }
-            
+            //get return type
             SymbolRecord* record = lookupSymbol(table, node->token.value);
             if (record && record->type == TYPE_FUNCTION)
                 return record->data.func_data.return_type;
@@ -258,65 +262,90 @@ SymbolType inferType(ASTNode* node, SymbolTable* table) {
 }
 
 // ==========================================
-// Type compatibility
+// type compatibility
 // ==========================================
-
+//validates that two data types can legally interact using the given operator and returns the combination
 static SymbolType checkTypeCompatibility(SymbolType left, TokenType op, SymbolType right, int line) {
-    if (op == TOKEN_OP_EQ  || op == TOKEN_OP_NEQ ||
-        op == TOKEN_OP_LT  || op == TOKEN_OP_GT  ||
-        op == TOKEN_OP_LTE || op == TOKEN_OP_GTE) {
-        if (left != TYPE_UNKNOWN && right != TYPE_UNKNOWN) {
-            if ((left == TYPE_STRING) != (right == TYPE_STRING))
-                reportError(PHASE_SEMANTIC, line, "Cannot compare string with non-string");
+    switch (op) {
+        //comparison op
+        case TOKEN_OP_EQ:
+        case TOKEN_OP_NEQ:
+        case TOKEN_OP_LT:
+        case TOKEN_OP_GT:
+        case TOKEN_OP_LTE:
+        case TOKEN_OP_GTE:
+            //if both types are known, ensure we arent mixing strings with another type
+            if (left != TYPE_UNKNOWN && right != TYPE_UNKNOWN) {
+                if ((left == TYPE_STRING) != (right == TYPE_STRING)) {
+                    reportError(PHASE_SEMANTIC, line, "Cannot compare string with non-string");
+                }
+            }
+            //comparisons always a boolean
+            return TYPE_BOOL;
+
+        //logical op
+        case TOKEN_KW_AND:
+        case TOKEN_KW_OR:
+            //logical operations always a boolean
+            return TYPE_BOOL;
+
+        //string op (..)
+        case TOKEN_OP_CONCAT: {
+            //lua allows numbers to be implicitly converted to strings during concatenation
+            bool leftValid  = (left == TYPE_STRING || left == TYPE_INT || left == TYPE_DOUBLE || left == TYPE_UNKNOWN);
+            bool rightValid = (right == TYPE_STRING || right == TYPE_INT || right == TYPE_DOUBLE || right == TYPE_UNKNOWN);
+
+            if (!leftValid || !rightValid) {
+                reportError(PHASE_SEMANTIC, line, "Concatenation (..) requires operands to be strings or numbers");
+                return TYPE_UNKNOWN;
+            }
+            //always a string
+            return TYPE_STRING;
         }
-        return TYPE_BOOL;
-    }
 
-    if (op == TOKEN_KW_AND || op == TOKEN_KW_OR) return TYPE_BOOL;
-
-    if (op == TOKEN_OP_CONCAT) {
-        bool leftValid  = (left == TYPE_STRING || left == TYPE_INT || left == TYPE_DOUBLE || left == TYPE_UNKNOWN);
-        bool rightValid = (right == TYPE_STRING || right == TYPE_INT || right == TYPE_DOUBLE || right == TYPE_UNKNOWN);
-
-        if (!leftValid || !rightValid) {
-            reportError(PHASE_SEMANTIC, line, "Concatenation (..) requires operands to be strings or numbers");
-            return TYPE_UNKNOWN;
+        //math op
+        default: {
+            //math operations strictly require numbers
+            bool leftValid  = (left  == TYPE_INT || left  == TYPE_DOUBLE || left  == TYPE_UNKNOWN);
+            bool rightValid = (right == TYPE_INT || right == TYPE_DOUBLE || right == TYPE_UNKNOWN);
+            
+            if (!leftValid || !rightValid) {
+                reportError(PHASE_SEMANTIC, line, "Cannot perform math operation on non-numeric types");
+                return TYPE_UNKNOWN;
+            }
+            
+            //if we have double, answer is double, else int
+            if (left == TYPE_DOUBLE || right == TYPE_DOUBLE) return TYPE_DOUBLE;
+            return TYPE_INT;
         }
-        return TYPE_STRING;
     }
-
-    bool leftValid  = (left  == TYPE_INT || left  == TYPE_DOUBLE || left  == TYPE_UNKNOWN);
-    bool rightValid = (right == TYPE_INT || right == TYPE_DOUBLE || right == TYPE_UNKNOWN);
-    if (!leftValid || !rightValid) {
-        reportError(PHASE_SEMANTIC, line, "Cannot perform math operation on non-numeric types");
-        return TYPE_UNKNOWN;
-    }
-    if (left == TYPE_DOUBLE || right == TYPE_DOUBLE) return TYPE_DOUBLE;
-    return TYPE_INT;
 }
 
 // ==========================================
-// Statement analyzers
+// statement analyzers
 // ==========================================
-
 static void analyzeSemanticAssign(ASTNode* node, SymbolTable* table) {
-    //left
+    //variable
     ASTNode* varNode = node->children[0];
-    //right
+    //value
     ASTNode* valNode = node->children[1];
     const char* varName = varNode->token.value;
 
     SymbolType inferred = inferType(valNode, table);
     SymbolRecord* existing = lookupSymbol(table, varName);
-
+    //if already exists, check if value assignment is legal
     if (existing != NULL) {
         if (existing->type == TYPE_UNKNOWN) {
             existing->type = inferred;
             existing->data.var_data.is_initialized = true;
+        //mismatch
         } else if (existing->type != inferred && inferred != TYPE_UNKNOWN) {
             reportError(PHASE_SEMANTIC, node->token.line, "Type mismatch for variable '%s'", varName);
         }
-    } else {
+    }
+    //create the record
+    else {
+        //scope
         ScopeType scope;
         SymbolTable* targetTable;
         if (isGlobalTable(table)) {
@@ -326,24 +355,27 @@ static void analyzeSemanticAssign(ASTNode* node, SymbolTable* table) {
             scope = SCOPE_GLOBAL_IMPLICIT;
             targetTable = getGlobalTable(table);
         }
+        //add record
         SymbolRecord* newRecord = createVarRecord(varName, inferred, scope, true);
         insertSymbol(targetTable, newRecord);
     }
 }
 
 static void analyzeSemanticLocal(ASTNode* node, SymbolTable* table) {
+    //variable
     ASTNode* varNode = node->children[0];
+    //value
     ASTNode* valNode = node->children[1];
     const char* varName = varNode->token.value;
 
     SymbolType inferred = TYPE_UNKNOWN;
     bool initialized = false;
-
+    //is initialized
     if (valNode != NULL && valNode->type != AST_NIL) {
         inferred = inferType(valNode, table);
         initialized = true;
     }
-
+    //add record if its initialized or just declated. local x
     ScopeType scope = isGlobalTable(table) ? SCOPE_FILE_LOCAL : SCOPE_BLOCK_LOCAL;
     SymbolRecord* newRecord = createVarRecord(varName, inferred, scope, initialized);
     insertSymbol(table, newRecord);
@@ -354,23 +386,22 @@ static void analyzeSemanticIf(ASTNode* node, SymbolTable* table) {
     ASTNode* bodyNode = node->children[1];
     ASTNode* elseNode = (node->childCount > 2) ? node->children[2] : NULL;
 
+    //condition expression must be int or bool
     SymbolType condType = inferType(condNode, table);
     if (condType != TYPE_BOOL && condType != TYPE_INT && condType != TYPE_UNKNOWN)
         reportError(PHASE_SEMANTIC, node->token.line, "if condition must be boolean or numeric");
 
+    //create the if body scope and analyze it
     SymbolTable* ifScope = createSymbolTable(table);
     analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, ifScope);
 
-    SymbolTable* elseScope = getNextChildScope(table);
+    //handle the else/elseif branch
     if (elseNode != NULL && elseNode->type != AST_NIL) {
-        analyzeSemanticBlock(elseNode->children, elseNode->childCount, elseScope);
-    }
-
-    if (elseNode != NULL) {
-        // elseif is another AST_IF node; else is a plain block
         if (elseNode->type == AST_IF) {
+            //elseif recurse, it will create its own scope internally
             analyzeSemanticIf(elseNode, table);
         } else {
+            //plain else block, create one scope and analyze it
             SymbolTable* elseScope = createSymbolTable(table);
             analyzeSemanticBlock(elseNode->children, elseNode->childCount, elseScope);
         }
@@ -378,9 +409,9 @@ static void analyzeSemanticIf(ASTNode* node, SymbolTable* table) {
 }
 
 static void analyzeSemanticLoop(ASTNode* node, SymbolTable* table) {
+    //handle while and repeat loops
     ASTNode* condNode;
     ASTNode* bodyNode;
-
     if (node->type == AST_WHILE) {
         condNode = node->children[0];
         bodyNode = node->children[1];
@@ -390,6 +421,7 @@ static void analyzeSemanticLoop(ASTNode* node, SymbolTable* table) {
     }
 
     SymbolType condType = inferType(condNode, table);
+    //condition expression must be int or bool
     if (condType != TYPE_BOOL && condType != TYPE_INT && condType != TYPE_UNKNOWN)
         reportError(PHASE_SEMANTIC, node->token.line, "Loop condition must be boolean or numeric");
     SymbolTable* loopScope = createSymbolTable(table);
@@ -400,26 +432,29 @@ static void analyzeSemanticFor(ASTNode* node, SymbolTable* table) {
     ASTNode* varNode   = node->children[0];
     ASTNode* startNode = node->children[1];
     ASTNode* limitNode = node->children[2];
+    //step is optional
     ASTNode* stepNode  = (node->childCount == 5) ? node->children[3] : NULL;
     ASTNode* bodyNode  = node->children[node->childCount - 1];
 
+    //type inference
     SymbolType startType = inferType(startNode, table);
     SymbolType limitType = inferType(limitNode, table);
     SymbolType stepType  = (stepNode != NULL) ? inferType(stepNode, table) : TYPE_INT;
 
+    //must be a number
     bool startOk = (startType == TYPE_INT || startType == TYPE_DOUBLE || startType == TYPE_UNKNOWN);
     bool limitOk = (limitType == TYPE_INT || limitType == TYPE_DOUBLE || limitType == TYPE_UNKNOWN);
     bool stepOk  = (stepType  == TYPE_INT || stepType  == TYPE_DOUBLE || stepType  == TYPE_UNKNOWN);
-
+    //error if not
     if (!startOk || !limitOk || !stepOk)
         reportError(PHASE_SEMANTIC, node->token.line, "for loop bounds must be numeric");
-
+    //create scope
     SymbolTable* forScope = createSymbolTable(table);
-    SymbolType iterType = (startType == TYPE_DOUBLE || limitType == TYPE_DOUBLE)
-                          ? TYPE_DOUBLE : TYPE_INT;
-    SymbolRecord* iterRecord = createVarRecord(
-        varNode->token.value, iterType, SCOPE_BLOCK_LOCAL, true);
+    //if srart or limit is double then the iterable must be as well
+    SymbolType iterType = (startType == TYPE_DOUBLE || limitType == TYPE_DOUBLE) ? TYPE_DOUBLE : TYPE_INT;
+    SymbolRecord* iterRecord = createVarRecord(varNode->token.value, iterType, SCOPE_BLOCK_LOCAL, true);
     insertSymbol(forScope, iterRecord);
+    //analize block
     analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, forScope);
 }
 
@@ -427,29 +462,30 @@ static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
     const char* funcName = node->token.value;
     ASTNode* bodyNode = node->children[node->childCount - 1];
     int paramCount = node->childCount - 1;
-
+    //allocate space for the params and initialize thier type to unknown
     SymbolType* paramTypes = NULL;
     if (paramCount > 0) {
         paramTypes = (SymbolType*)malloc(sizeof(SymbolType) * paramCount);
         for (int i = 0; i < paramCount; i++) paramTypes[i] = TYPE_UNKNOWN;
     }
-
+    //create function record
     SymbolRecord* funcRecord = createFuncRecord(funcName, TYPE_UNKNOWN, paramTypes, paramCount);
     insertSymbol(table, funcRecord);
-
+    //create scope
     SymbolTable* funcScope = createSymbolTable(table);
+    //populate the params in the scope
     for (int i = 0; i < paramCount; i++) {
         const char* paramName = node->children[i]->token.value;
         SymbolRecord* paramRecord = createVarRecord(paramName, TYPE_UNKNOWN, SCOPE_BLOCK_LOCAL, true);
         insertSymbol(funcScope, paramRecord);
     }
-
+    //analize the function scope we created, and then restore the global scope to the previous one
     SymbolRecord* prevFunc = currentFunctionScope;
     currentFunctionScope = funcRecord;
     analyzeSemanticBlock(bodyNode->children, bodyNode->childCount, funcScope);
     currentFunctionScope = prevFunc;
 
-    //update inferred param types into the function rec
+    //update inferred param types from the function scope to its parents function record
     if (paramCount > 0 && paramTypes != NULL) {
         for (int i = 0; i < paramCount; i++) {
             const char* paramName = node->children[i]->token.value;
@@ -460,38 +496,69 @@ static void analyzeSemanticFunction(ASTNode* node, SymbolTable* table) {
 
     // Save scope for codegen
     if (scopeCount < 100) {
-            allScopes[scopeCount] = funcScope;
-            strncpy(allScopeNames[scopeCount], funcName, 127);
-            allScopeNames[scopeCount][127] = '\0';
-            for (int i = 0; i < paramCount && i < 20; i++) {
-                strncpy(allFuncParamNames[scopeCount][i], node->children[i]->token.value, 63);
-                allFuncParamNames[scopeCount][i][63] = '\0';
-            }
-            scopeCount++;
+        allScopes[scopeCount] = funcScope;
+        strncpy(allScopeNames[scopeCount], funcName, 127);
+        allScopeNames[scopeCount][127] = '\0';
+        for (int i = 0; i < paramCount && i < 20; i++) {
+            strncpy(allFuncParamNames[scopeCount][i], node->children[i]->token.value, 63);
+            allFuncParamNames[scopeCount][i][63] = '\0';
         }
+        scopeCount++;
+    }
 }
 
 static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
+    //empty returns, void function
     if (node->childCount == 0 || node->children[0] == NULL) {
         if (currentFunctionScope != NULL) {
-            if (currentFunctionScope->data.func_data.return_type == TYPE_UNKNOWN)
+            if (currentFunctionScope->data.func_data.return_type == TYPE_UNKNOWN) {
                 currentFunctionScope->data.func_data.return_type = TYPE_VOID;
-            else if (currentFunctionScope->data.func_data.return_type != TYPE_VOID)
+            //if there is a return that returned something and now we have one that returns nothing, ist a contradiction 
+            } else if (currentFunctionScope->data.func_data.return_type != TYPE_VOID) {
+                //we previously returned a value, but now we are returning nothing, error
                 reportError(PHASE_SEMANTIC, node->token.line, "Function '%s' returns both void and non-void values", currentFunctionScope->name);
+            }
         }
         return;
     }
+    //infer the return type since its not void
     SymbolType returnType = inferType(node->children[0], table);
+    
     if (currentFunctionScope != NULL) {
         SymbolType cur = currentFunctionScope->data.func_data.return_type;
-        if (cur == TYPE_UNKNOWN) {
-            currentFunctionScope->data.func_data.return_type = returnType;
-        } else if (cur == TYPE_INT && returnType == TYPE_DOUBLE) {
-            currentFunctionScope->data.func_data.return_type = TYPE_DOUBLE;
-        } else if (cur == TYPE_DOUBLE && returnType == TYPE_INT) {
-            // already wider — no change needed
-        } else if (cur != returnType && returnType != TYPE_UNKNOWN) {
-            reportError(PHASE_SEMANTIC, node->token.line, "Inconsistent return types in function '%s'", currentFunctionScope->name);
+        //see if there are contredicting return types already
+        switch (cur) {
+            //first return weve faced
+            case TYPE_UNKNOWN:
+                currentFunctionScope->data.func_data.return_type = returnType;
+                break;
+            //previously returned an integer
+            case TYPE_INT:
+                //can be double, just need to change the return to double
+                if (returnType == TYPE_DOUBLE) {
+                    currentFunctionScope->data.func_data.return_type = TYPE_DOUBLE;
+                }
+                //if not int or unk as well then error
+                else if (returnType != TYPE_INT && returnType != TYPE_UNKNOWN) {
+                    reportError(PHASE_SEMANTIC, node->token.line, "Inconsistent return types in function '%s'", currentFunctionScope->name);
+                }
+                break;
+
+            //return double in the past
+            case TYPE_DOUBLE:
+                //error if not int double or unk
+                if (returnType != TYPE_INT && returnType != TYPE_DOUBLE && returnType != TYPE_UNKNOWN) {
+                    reportError(PHASE_SEMANTIC, node->token.line, "Inconsistent return types in function '%s'", currentFunctionScope->name);
+                }
+                break;
+
+            //strings, booleans, void
+            default:
+                //MUST match
+                if (cur != returnType && returnType != TYPE_UNKNOWN) {
+                    reportError(PHASE_SEMANTIC, node->token.line, "Inconsistent return types in function '%s'", currentFunctionScope->name);
+                }
+                break;
         }
     }
 }
@@ -499,49 +566,56 @@ static void analyzeSemanticReturn(ASTNode* node, SymbolTable* table) {
 static void analyzeSemanticCall(ASTNode* node, SymbolTable* table) {
     const char* funcName = node->token.value;
 
+    //check print
     if (strcmp(funcName, "print") == 0) {
         for (int i = 0; i < node->childCount; i++) {
             inferType(node->children[i], table);
         }
-        return;
-    }
+    } 
+    else {
+        //lookup in current table
+        SymbolRecord* funcRecord = lookupSymbol(table, funcName);
 
-    SymbolRecord* funcRecord = lookupSymbol(table, funcName);
-
-    //logic checks
-    if (funcRecord == NULL) {
-        reportError(PHASE_SEMANTIC, node->token.line, "Call to undefined function '%s'", funcName);
-        return;
-    }
-    if (funcRecord->type != TYPE_FUNCTION) {
-        reportError(PHASE_SEMANTIC, node->token.line, "'%s' is not a function", funcName);
-        return;
-    }
-    int expectedParams = funcRecord->data.func_data.params.param_count;
-    int givenArgs = node->childCount;
-
-    if (givenArgs != expectedParams) {
-        reportError(PHASE_SEMANTIC, node->token.line, "Function '%s' expects %d arguments but got %d", funcName, expectedParams, givenArgs);
-        return;
-    }
-
-    //compare given types with wanted, if not equal then infer the type from them
-    for (int i = 0; i < givenArgs; i++) {
-        SymbolType argType = inferType(node->children[i], table);
-        SymbolType expectedType = funcRecord->data.func_data.params.param_types[i];
-
-        if (expectedType == TYPE_UNKNOWN) {
-            funcRecord->data.func_data.params.param_types[i] = argType;
-            for (int j = 0; j < scopeCount; j++) {
-                if (strcmp(allScopeNames[j], funcName) == 0) {
-                    const char* paramName = allFuncParamNames[j][i];
-                    SymbolRecord* paramRec = lookupSymbol(allScopes[j], paramName);
-                    if (paramRec) paramRec->type = argType;
-                    break;
+        //logic and type checks
+        if (funcRecord == NULL) {
+            reportError(PHASE_SEMANTIC, node->token.line, "Call to undefined function '%s'", funcName);
+        } else if (funcRecord->type != TYPE_FUNCTION) {
+            reportError(PHASE_SEMANTIC, node->token.line, "'%s' is not a function", funcName);
+        } else {
+            //verify the correct number of arguments was passed
+            int expectedParams = funcRecord->data.func_data.params.param_count;
+            int givenArgs = node->childCount;
+            if (givenArgs != expectedParams) {
+                reportError(PHASE_SEMANTIC, node->token.line, "Function '%s' expects %d arguments but got %d", funcName, expectedParams, givenArgs);
+            } else {
+                //argument Type checking & inference
+                for (int i = 0; i < givenArgs; i++) {
+                    //infer type from call. func(1, "hi"), infer child 1 is int and 2 is string
+                    SymbolType argType = inferType(node->children[i], table);
+                    //known types
+                    SymbolType expectedType = funcRecord->data.func_data.params.param_types[i];
+                    //if not known, its the infered
+                    if (expectedType == TYPE_UNKNOWN) {
+                        funcRecord->data.func_data.params.param_types[i] = argType;
+                    
+                        //look up the functions internal symbol table to update the parameters record there too
+                        for (int j = 0; j < scopeCount; j++) {
+                            if (strcmp(allScopeNames[j], funcName) == 0) {
+                                //found, now update infered type
+                                const char* paramName = allFuncParamNames[j][i];
+                                SymbolRecord* paramRec = lookupSymbol(allScopes[j], paramName);
+                                if (paramRec) {
+                                    paramRec->type = argType;
+                                }
+                                break;
+                            }
+                        }
+                    } else if (argType != expectedType && argType != TYPE_UNKNOWN) {
+                        //inconsistency in expected and infered, error
+                        reportError(PHASE_SEMANTIC, node->token.line, "Argument %d to function '%s' has wrong type", i + 1, funcName);
+                    }
                 }
             }
-        } else if (argType != expectedType && argType != TYPE_UNKNOWN) {
-            reportError(PHASE_SEMANTIC, node->token.line, "Argument %d to function '%s' has wrong type", i + 1, funcName);
         }
     }
 }
