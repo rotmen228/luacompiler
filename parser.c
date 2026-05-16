@@ -98,14 +98,14 @@ ASTNode* parseStatement(Parser* p) {
     Token t = peek(p);
     //what type of AST node
     switch (t.type) {
-        case TOKEN_KW_IF:       return parseIf(p);
-        case TOKEN_KW_WHILE:    return parseWhile(p);
-        case TOKEN_KW_FOR:      return parseFor(p);
+        case TOKEN_KW_IF: return parseIf(p);
+        case TOKEN_KW_WHILE: return parseWhile(p);
+        case TOKEN_KW_FOR: return parseFor(p);
         case TOKEN_KW_FUNCTION: return parseFunctionDef(p);
-        case TOKEN_KW_RETURN:   return parseReturn(p);
-        case TOKEN_KW_LOCAL:    return parseLocal(p);
-        case TOKEN_KW_REPEAT:   return parseRepeat(p);
-        case TOKEN_IDENTIFIER:  return parseAssignOrCall(p);
+        case TOKEN_KW_RETURN: return parseReturn(p);
+        case TOKEN_KW_LOCAL: return parseLocal(p);
+        case TOKEN_KW_REPEAT: return parseRepeat(p);
+        case TOKEN_IDENTIFIER: return parseAssignOrCall(p);
         default:
             reportError(PHASE_SYNTAX, peek(p).line, "Unexpected token '%s'", peek(p).value);
             consume(p);
