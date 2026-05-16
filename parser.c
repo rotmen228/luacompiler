@@ -162,6 +162,52 @@ ASTNode* parseReturn(Parser* p) {
     return returnNode;
 }
 
+ASTNode* parseIf(Parser* p) {
+    //consume the if or elseif token
+    Token ifToken = consume(p); 
+    //parse the condition and ensure then follows
+    ASTNode* condition = parseExpression(p);
+    if (!match(p, TOKEN_KW_THEN)) {
+        parseError(p, "Expected 'then' after condition");
+    }
+    //parse the main body block
+    ASTNode* body = parseBlock(p);
+    ASTNode* elseNode = NULL;
+    //handle if/elseif/else chain
+    switch (peek(p).type) {
+        case TOKEN_KW_ELSEIF:
+            //recursively call parseIf. It will consume the elseif
+            elseNode = parseIf(p); 
+            break;
+            
+        case TOKEN_KW_ELSE:
+            //consume the else token, then parse the final block
+            consume(p); 
+            elseNode = parseBlock(p);
+            break;
+            
+        default:
+            break;
+    }
+    //only the root if needs an end
+    if (ifToken.type == TOKEN_KW_IF) {
+        if (!match(p, TOKEN_KW_END)) {
+            parseError(p, "Expected 'end' to close if statement");
+        }
+    }
+    //construct the AST node
+    ASTNode* node = createNode(AST_IF, ifToken);
+    addChild(node, condition);
+    addChild(node, body);
+    //add the else/elseif branch if it exists, ifnot add a NIL so the if node always has 3 childern
+    if (elseNode) {
+        addChild(node, elseNode);
+    } else {
+        addChild(node, createNode(AST_NIL, (Token){TOKEN_KW_NIL, "nil", 0}));
+    }
+    return node;
+}
+
 ASTNode* parseAssignOrCall(Parser* p) {
     // 1. שמור את שם המשתנה/הפונקציה מהאסימון הנוכחי IDENTIFIER וצרוך אותו.
     Token idToken = consume(p);
@@ -212,52 +258,6 @@ ASTNode* parseAssignOrCall(Parser* p) {
         parseError(p, "Expected '=' for assignment or '(' for function call");
         return NULL; // לא יקרה בפועל כי parseError עושה exit
     }
-}
-
-ASTNode* parseIf(Parser* p) {
-    //consume the if or elseif token
-    Token ifToken = consume(p); 
-    //parse the condition and ensure then follows
-    ASTNode* condition = parseExpression(p);
-    if (!match(p, TOKEN_KW_THEN)) {
-        parseError(p, "Expected 'then' after condition");
-    }
-    //parse the main body block
-    ASTNode* body = parseBlock(p);
-    ASTNode* elseNode = NULL;
-    //handle if/elseif/else chain
-    switch (peek(p).type) {
-        case TOKEN_KW_ELSEIF:
-            //recursively call parseIf. It will consume the elseif
-            elseNode = parseIf(p); 
-            break;
-            
-        case TOKEN_KW_ELSE:
-            //consume the else token, then parse the final block
-            consume(p); 
-            elseNode = parseBlock(p);
-            break;
-            
-        default:
-            break;
-    }
-    //only the root if needs an end
-    if (ifToken.type == TOKEN_KW_IF) {
-        if (!match(p, TOKEN_KW_END)) {
-            parseError(p, "Expected 'end' to close if statement");
-        }
-    }
-    //construct the AST node
-    ASTNode* node = createNode(AST_IF, ifToken);
-    addChild(node, condition);
-    addChild(node, body);
-    //add the else/elseif branch if it exists, ifnot add a NIL so the if node always has 3 childern
-    if (elseNode) {
-        addChild(node, elseNode);
-    } else {
-        addChild(node, createNode(AST_NIL, (Token){TOKEN_KW_NIL, "nil", 0}));
-    }
-    return node;
 }
 
 ASTNode* parseWhile(Parser* p) {
