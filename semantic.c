@@ -7,7 +7,7 @@
 //tracks the specific function we are currently analyzing to verify the returns statements type
 static SymbolRecord* currentFunctionScope = NULL;
 
-//arrays to allow a quick search of functions and its parameters without searching the entire AST
+//arrays to allow a quick search of functions and its parameters without searching the entire AST in codegen
 static SymbolTable* allScopes[100]; //pointers to the symbol tables
 static char allScopeNames[100][128]; //the names of those functions
 static char allFuncParamNames[100][20][64]; //params names
