@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-// סוגי השלבים בהם יכולה לקרות שגיאה
+//error types
 typedef enum {
     PHASE_LEXICAL,
     PHASE_SYNTAX,
@@ -11,6 +11,7 @@ typedef enum {
     PHASE_CODEGEN
 } ErrorPhase;
 
+//error obj
 typedef struct {
     ErrorPhase phase;
     int line;

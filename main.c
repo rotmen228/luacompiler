@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) {
 
     // 7. קרא לפונקציה analyzeSemantic על עץ_תחביר
     SymbolTable* global_symbol_table = NULL;
-    if (syntax_tree) { // הגנה קטנה למקרה שהעץ לא נוצר
+    if (syntax_tree) {
         global_symbol_table = analyzeSemantic(syntax_tree);
     }
 

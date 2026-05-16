@@ -25,6 +25,7 @@ typedef enum {
 
 
 //states for the lexers state machine
+//the regular expressions
 typedef enum {
     STATE_START,
     STATE_IN_ID,
@@ -58,25 +59,25 @@ typedef struct {
 
 //dictionary of reserved keywords
 static const TokenDict keyword_dict[] = {
-    {"and",      TOKEN_KW_AND},
-    {"do",       TOKEN_KW_DO},
-    {"else",     TOKEN_KW_ELSE},
-    {"elseif",   TOKEN_KW_ELSEIF},
-    {"end",      TOKEN_KW_END},
-    {"false",    TOKEN_KW_FALSE},
-    {"for",      TOKEN_KW_FOR},
+    {"and", TOKEN_KW_AND},
+    {"do", TOKEN_KW_DO},
+    {"else", TOKEN_KW_ELSE},
+    {"elseif", TOKEN_KW_ELSEIF},
+    {"end", TOKEN_KW_END},
+    {"false", TOKEN_KW_FALSE},
+    {"for", TOKEN_KW_FOR},
     {"function", TOKEN_KW_FUNCTION},
-    {"if",       TOKEN_KW_IF},
-    {"local",    TOKEN_KW_LOCAL},
-    {"nil",      TOKEN_KW_NIL},
-    {"not",      TOKEN_KW_NOT},
-    {"or",       TOKEN_KW_OR},
-    {"repeat",   TOKEN_KW_REPEAT},
-    {"return",   TOKEN_KW_RETURN},
-    {"then",     TOKEN_KW_THEN},
-    {"true",     TOKEN_KW_TRUE},
-    {"until",    TOKEN_KW_UNTIL},
-    {"while",    TOKEN_KW_WHILE}
+    {"if", TOKEN_KW_IF},
+    {"local", TOKEN_KW_LOCAL},
+    {"nil", TOKEN_KW_NIL},
+    {"not", TOKEN_KW_NOT},
+    {"or", TOKEN_KW_OR},
+    {"repeat", TOKEN_KW_REPEAT},
+    {"return", TOKEN_KW_RETURN},
+    {"then", TOKEN_KW_THEN},
+    {"true", TOKEN_KW_TRUE},
+    {"until", TOKEN_KW_UNTIL},
+    {"while", TOKEN_KW_WHILE}
 };
 
 //dictionary of operators and punctuation
@@ -86,23 +87,23 @@ static const TokenDict operator_dict[] = {
     {"<=", TOKEN_OP_LTE},
     {">=", TOKEN_OP_GTE},
     {"..", TOKEN_OP_CONCAT},
-    {"+",  TOKEN_OP_PLUS},
-    {"-",  TOKEN_OP_MINUS},
-    {"*",  TOKEN_OP_MUL},
-    {"/",  TOKEN_OP_DIV},
-    {"%",  TOKEN_OP_MOD},
-    {"<",  TOKEN_OP_LT},
-    {">",  TOKEN_OP_GT},
-    {"=",  TOKEN_OP_ASSIGN},
-    {"(",  TOKEN_PUNC_LPAREN},
-    {")",  TOKEN_PUNC_RPAREN},
-    {"{",  TOKEN_PUNC_LBRACE},
-    {"}",  TOKEN_PUNC_RBRACE},
-    {"[",  TOKEN_PUNC_LBRACKET},
-    {"]",  TOKEN_PUNC_RBRACKET},
-    {";",  TOKEN_PUNC_SEMI},
-    {":",  TOKEN_PUNC_COLON},
-    {",",  TOKEN_PUNC_COMMA}
+    {"+", TOKEN_OP_PLUS},
+    {"-", TOKEN_OP_MINUS},
+    {"*", TOKEN_OP_MUL},
+    {"/", TOKEN_OP_DIV},
+    {"%", TOKEN_OP_MOD},
+    {"<", TOKEN_OP_LT},
+    {">", TOKEN_OP_GT},
+    {"=", TOKEN_OP_ASSIGN},
+    {"(", TOKEN_PUNC_LPAREN},
+    {")", TOKEN_PUNC_RPAREN},
+    {"{", TOKEN_PUNC_LBRACE},
+    {"}", TOKEN_PUNC_RBRACE},
+    {"[", TOKEN_PUNC_LBRACKET},
+    {"]", TOKEN_PUNC_RBRACKET},
+    {";", TOKEN_PUNC_SEMI},
+    {":", TOKEN_PUNC_COLON},
+    {",", TOKEN_PUNC_COMMA}
 };
 
 TokenList runLexer(const char* sourceCode);

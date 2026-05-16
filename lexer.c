@@ -10,14 +10,14 @@
 // חישוב אוטומטי של גודל מילון האופרטורים
 #define OPERATOR_DICT_SIZE (sizeof(operator_dict) / sizeof(operator_dict[0]))
 
-// פונקציית עזר: הקצאת זיכרון לרשימה
+// הקצאת זיכרון לרשימה
 static void initTokenList(TokenList* list) {
     list->capacity = 100;
     list->count = 0;
     list->tokens = (Token*)malloc(list->capacity * sizeof(Token));
 }
 
-// פונקציית עזר: הוספת אסימון לרשימה
+// הוספת אסימון לרשימה
 static void addToken(TokenList* list, TokenType type, const char* value, int line) {
     if (list->count >= list->capacity) {
         list->capacity *= 2;
@@ -52,7 +52,6 @@ static TokenType identifyOperator(const char* op) {
     return TOKEN_ERROR; 
 }
 
-// הפונקציה הראשית: ריצת האוטומט
 TokenList runLexer(const char* sourceCode) {
     TokenList list;
     initTokenList(&list);
@@ -61,6 +60,7 @@ TokenList runLexer(const char* sourceCode) {
     const char* ptr = sourceCode;
     
     while (*ptr != '\0') {
+        //white noise
         //skip whitespaces and track newlines
         if (isspace(*ptr)) {
             if (*ptr == '\n') currentLine++;
@@ -72,12 +72,16 @@ TokenList runLexer(const char* sourceCode) {
         }
         else{
             //start reading a new token using a state machine
+
+            //starting char
             const char* startPos = ptr;
             LexerState state = STATE_START;
+            //the chars we collected so far
             char buffer[256] = {0};
             int bufIdx = 0;
+            //determine double or int
             bool hasDot = false;
-            
+            //run until error state or EOF
             while (state != STATE_ERROR && *ptr != '\0') {
                 char c = *ptr;
                 
@@ -136,7 +140,7 @@ TokenList runLexer(const char* sourceCode) {
                         break;
                         
                     case STATE_OPERATOR:
-                        //handle two-character operators
+                        //two operators
                         if ((buffer[0] == '=' && c == '=') || 
                             (buffer[0] == '~' && c == '=') ||
                             (buffer[0] == '<' && c == '=') ||
