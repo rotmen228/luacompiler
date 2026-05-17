@@ -23,7 +23,7 @@ typedef enum {
     TYPE_FUNCTION
 } SymbolType;
 
-//holds the param types of a function
+//dynamic arrya that holds the param types of a function
 typedef struct {
     SymbolType* param_types;
     int param_count;
