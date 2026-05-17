@@ -140,7 +140,7 @@ void insertSymbol(SymbolTable* table, SymbolRecord* record) {
     for (HashEntry* e = table->buckets[idx]; e != NULL; e = e->next) {
         if (strcmp(e->record->name, record->name) == 0) {
             reportError(PHASE_SEMANTIC, 0, "Duplicate declaration of '%s' in the same scope", record->name);
-            return; // dont insert the shadowing entry
+            exit(1); // dont insert the shadowing entry
         }
     }
 
