@@ -59,7 +59,98 @@ static const char* printfFmt(SymbolType type) {
         default: return "%p";
     }
 }
+// ============================================================
+// generateCode
+// ============================================================
+//detects the entry point in lua, wich is the return at the top level
+static int isEntryPointReturn(ASTNode* node) {
+    return node->type == AST_RETURN &&
+           node->childCount > 0 &&
+           node->children[0] != NULL &&
+           node->children[0]->type == AST_FUNCTION_CALL;
+}
+//generate libraries and custom functions
+char* generateCode(ASTNode* root, SymbolTable* globalTable) {
+    buf_init();
+    g_shadow_tmp_counter = 0;
 
+    buf_append("#include <stdio.h>\n");
+    buf_append("#include <stdlib.h>\n");
+    buf_append("#include <string.h>\n");
+    buf_append("#include <stdbool.h>\n");
+    buf_append("\n");
+
+    buf_append("static char* concat_strings(const char* a, const char* b) {\n");
+    buf_append("    if (!a) a = \"nil\"; if (!b) b = \"nil\";\n");
+    buf_append("    char* result = (char*)malloc(strlen(a) + strlen(b) + 1);\n");
+    buf_append("    strcpy(result, a);\n");
+    buf_append("    strcat(result, b);\n");
+    buf_append("    return result;\n");
+    buf_append("}\n\n");
+
+    buf_append("static char* num_to_str(double v) {\n");
+    buf_append("    char* buf = (char*)malloc(64);\n");
+    buf_append("    if (v == (long long)v) snprintf(buf, 64, \"%lld\", (long long)v);\n");
+    buf_append("    else snprintf(buf, 64, \"%g\", v);\n");
+    buf_append("    return buf;\n");
+    buf_append("}\n\n");
+
+    buf_append("static int str_eq(const char* a, const char* b) {\n");
+    buf_append("    if (!a && !b) return 1;\n");
+    buf_append("    if (!a || !b) return 0;\n");
+    buf_append("    return strcmp(a, b) == 0;\n");
+    buf_append("}\n\n");
+
+    //generate top level definitions
+    generateGlobalDeclarations(globalTable);
+    buf_append("\n");
+
+    generateFunctions(root, globalTable);
+
+    //generate C main()
+    buf_append("int main() {\n");
+
+    if (root) {
+        //iterate through all top level statements in the file
+        for (int i = 0; i < root->childCount; i++) {
+            ASTNode* child = root->children[i];
+            
+            //only process valid statements that are not function, we already processed them
+            if (child != NULL && child->type != AST_FUNCTION_DECL) {
+                
+                //intercept entry point and execute the function call directly inside main()
+                if (isEntryPointReturn(child)) {
+                    generateCall(child->children[0], 1, globalTable);
+                } 
+                //anything written outside of a function in Lua goes right here into C's main()
+                else {
+                    switch (child->type) {
+                        case AST_ASSIGNMENT: generateAssign(child, 1, globalTable); break;
+                        case AST_LOCAL_ASSIGN: generateLocalAssign(child, 1, globalTable); break;
+                        case AST_IF: generateIf(child, 1, globalTable); break;
+                        case AST_WHILE:
+                        case AST_REPEAT: generateLoop(child, 1, globalTable); break;
+                        case AST_FOR: generateFor(child, 1, globalTable); break;
+                        case AST_FUNCTION_CALL: generateCall(child, 1, globalTable); break;
+                        case AST_RETURN: generateReturn(child, 1, globalTable); break;
+                        default: break;
+                    }
+                }
+            }
+        }
+    }
+
+    buf_append("    return 0;\n");
+    buf_append("}\n");
+
+    //extract the completed C code string and safely reset the global buffer state for multiple files
+    char* final_code = g_buf.data;
+    g_buf.data = NULL;
+    g_buf.length = 0;
+    g_buf.capacity = 0;
+
+    return final_code;
+}
 // ============================================================
 // type detection helpers used by generateExpression
 // ============================================================
@@ -656,97 +747,4 @@ static void generateReturn(ASTNode* node, int indent, SymbolTable* table) {
         generateExpression(node->children[0], table);
     }
     buf_append(";\n");
-}
-
-// ============================================================
-// generateCode
-// ============================================================
-//detects the entry point in lua, wich is the return at the top level
-static int isEntryPointReturn(ASTNode* node) {
-    return node->type == AST_RETURN &&
-           node->childCount > 0 &&
-           node->children[0] != NULL &&
-           node->children[0]->type == AST_FUNCTION_CALL;
-}
-//generate libraries and custom functions
-char* generateCode(ASTNode* root, SymbolTable* globalTable) {
-    buf_init();
-    g_shadow_tmp_counter = 0;
-
-    buf_append("#include <stdio.h>\n");
-    buf_append("#include <stdlib.h>\n");
-    buf_append("#include <string.h>\n");
-    buf_append("#include <stdbool.h>\n");
-    buf_append("\n");
-
-    buf_append("static char* concat_strings(const char* a, const char* b) {\n");
-    buf_append("    if (!a) a = \"nil\"; if (!b) b = \"nil\";\n");
-    buf_append("    char* result = (char*)malloc(strlen(a) + strlen(b) + 1);\n");
-    buf_append("    strcpy(result, a);\n");
-    buf_append("    strcat(result, b);\n");
-    buf_append("    return result;\n");
-    buf_append("}\n\n");
-
-    buf_append("static char* num_to_str(double v) {\n");
-    buf_append("    char* buf = (char*)malloc(64);\n");
-    buf_append("    if (v == (long long)v) snprintf(buf, 64, \"%lld\", (long long)v);\n");
-    buf_append("    else snprintf(buf, 64, \"%g\", v);\n");
-    buf_append("    return buf;\n");
-    buf_append("}\n\n");
-
-    buf_append("static int str_eq(const char* a, const char* b) {\n");
-    buf_append("    if (!a && !b) return 1;\n");
-    buf_append("    if (!a || !b) return 0;\n");
-    buf_append("    return strcmp(a, b) == 0;\n");
-    buf_append("}\n\n");
-
-    //generate top level definitions
-    generateGlobalDeclarations(globalTable);
-    buf_append("\n");
-
-    generateFunctions(root, globalTable);
-
-    //generate C main()
-    buf_append("int main() {\n");
-
-    if (root) {
-        //iterate through all top level statements in the file
-        for (int i = 0; i < root->childCount; i++) {
-            ASTNode* child = root->children[i];
-            
-            //only process valid statements that are not function, we already processed them
-            if (child != NULL && child->type != AST_FUNCTION_DECL) {
-                
-                //intercept entry point and execute the function call directly inside main()
-                if (isEntryPointReturn(child)) {
-                    generateCall(child->children[0], 1, globalTable);
-                } 
-                //anything written outside of a function in Lua goes right here into C's main()
-                else {
-                    switch (child->type) {
-                        case AST_ASSIGNMENT: generateAssign(child, 1, globalTable); break;
-                        case AST_LOCAL_ASSIGN: generateLocalAssign(child, 1, globalTable); break;
-                        case AST_IF: generateIf(child, 1, globalTable); break;
-                        case AST_WHILE:
-                        case AST_REPEAT: generateLoop(child, 1, globalTable); break;
-                        case AST_FOR: generateFor(child, 1, globalTable); break;
-                        case AST_FUNCTION_CALL: generateCall(child, 1, globalTable); break;
-                        case AST_RETURN: generateReturn(child, 1, globalTable); break;
-                        default: break;
-                    }
-                }
-            }
-        }
-    }
-
-    buf_append("    return 0;\n");
-    buf_append("}\n");
-
-    //extract the completed C code string and safely reset the global buffer state for multiple files
-    char* final_code = g_buf.data;
-    g_buf.data = NULL;
-    g_buf.length = 0;
-    g_buf.capacity = 0;
-
-    return final_code;
 }
